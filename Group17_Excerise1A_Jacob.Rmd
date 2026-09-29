@@ -1,0 +1,506 @@
+---
+title: "CMDA-4654  \n Group Exercise 1 Part A"
+subtitle: "Group 17"
+author: "Jacob Carlson"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  pdf_document:
+    highlight: kate
+keep_tex: no
+number_sections: no
+html_document:
+  df_print: paged
+geometry: margin = 0.5in
+header-includes:
+- \usepackage{booktabs}
+- \usepackage{longtable}
+- \usepackage{array}
+- \usepackage{multirow}
+- \usepackage{wrapfig}
+- \usepackage{float}
+- \usepackage{colortbl}
+- \usepackage{pdflscape}
+- \usepackage{tabu}
+- \usepackage{threeparttable}
+- \usepackage{threeparttablex}
+- \usepackage[normalem]{ulem}
+- \usepackage{makecell}
+- \usepackage{xcolor}
+editor_options:
+  chunk_output_type: console
+documentclass: article
+urlcolor: blue
+---
+
+```{r setup, include=FALSE}
+# This is the setup chunk
+#  Here you can set global options for the entire document
+
+library(knitr) # I recommend doing this here
+library(readr)
+library(dplyr)
+library(ggplot2)
+
+# Although you can call functions from a library using the following notation
+#  without loading the entire library.
+knitr::opts_chunk$set(echo = TRUE,
+                      comment = NA, # Recommended
+                      fig.path = "./figures/",  # Store all figures here in relative path (make the folder first)
+                      fig.align = "center",
+                      fig.width = 7,
+                      fig.height = 7,
+                      message = FALSE, # Turn off load messages
+                      warning = FALSE, # Turn off warnings
+                      R.options = list(width = 100))
+
+```
+
+\clearpage
+
+# 1. Teammate Introduction
+
+My teammate's name is Sophia. She's from Fall's Church City, VA. Her favorite food to eat in Blacksburg is Kuma Moon and her favorite hobby is watching TV shows with her friends.
+
+# 2. Data Introduction
+
+The area of data we chose to explore is sports. The data set is sourced from the Society for American Baseball Research's Lahman Baseball Database.
+
+The data is linked [here](https://sabr.app.box.com/s/y1prhc795jk8zvmelfd3jq7tl389y6cd). We downloaded `FieldingPost.csv` and `batting.csv`.
+
+summarization of what the data corresponds to
+
+## Data Dictionary
+
+`FieldingPost.csv` contains post-season fielding data with the following variables:
+
+| Variable   | Description                                           |
+|------------|-------------------------------------------------------|
+| `playerID` | Player ID code                                        |
+| `yearID`   | Year                                                  |
+| `stint`    | Player's stint (order of appearances within a season) |
+| `teamID`   | Team                                                  |
+| `lgID`     | League                                                |
+| `G`        | Games                                                 |
+| `AB`       | At Bats                                               |
+| `R`        | Runs                                                  |
+| `H`        | Hits                                                  |
+| `2B`       | Doubles                                               |
+| `3B`       | Triples                                               |
+| `HR`       | Home Runs                                             |
+| `RBI`      | Runs Batted In                                        |
+| `SB`       | Stolen Bases                                          |
+| `CS`       | Caught Stealing                                       |
+| `BB`       | Base on Balls                                         |
+| `SO`       | Strikeouts                                            |
+| `IBB`      | Intentional Walks                                     |
+| `HBP`      | Hit by Pitch                                          |
+| `SH`       | Sacrifice Hits                                        |
+| `SF`       | Sacrifice Flies                                       |
+| `GIDP`     | Grounded Into Double Plays                            |
+
+`batting.csv` contains batting statistics with the following variables:
+
+| Variable   | Description                                           |
+|------------|-------------------------------------------------------|
+| `playerID` | Player ID code                                        |
+| `yearID`   | Year                                                  |
+| `stint`    | Player's stint (order of appearances within a season) |
+| `teamID`   | Team                                                  |
+| `lgID`     | League                                                |
+| `G`        | Games                                                 |
+| `AB`       | At Bats                                               |
+| `R`        | Runs                                                  |
+| `H`        | Hits                                                  |
+| `2B`       | Doubles                                               |
+| `3B`       | Triples                                               |
+| `HR`       | Home Runs                                             |
+| `RBI`      | Runs Batted In                                        |
+| `SB`       | Stolen Bases                                          |
+| `CS`       | Caught Stealing                                       |
+| `BB`       | Base on Balls                                         |
+| `SO`       | Strikeouts                                            |
+| `IBB`      | Intentional Walks                                     |
+| `HBP`      | Hit by Pitch                                          |
+| `SH`       | Sacrifice Hits                                        |
+| `SF`       | Sacrifice Flies                                       |
+| `GIDP`     | Grounded Into Double Plays                            |
+
+# 3. Analysis and Discussion
+
+```{r, include=FALSE}
+# data cleaning code, not included in knitted file (included in appendix)
+
+## Building data frames 
+
+pos <- read.csv("FieldingPost.csv")
+batting <- read.csv("batting.csv")
+
+stats <- merge(batting, pos[, c("playerID", "POS")],
+               by = "playerID", all.x = TRUE)# Add positions
+
+stats_clean <- stats[stats$lgID == "AL" |
+                    stats$lgID == "NL", ] # Focuses on American and National League
+
+stats_clean <- stats_clean[!is.na(stats_clean$POS), ]  # Removes batting data without positions
+
+stats_clean$BA <- ifelse(stats_clean$AB > 0, stats_clean$H /
+                           stats_clean$AB, NA) ## Adds batting average
+
+stats_wo_pitch <- stats_clean[stats_clean$POS != "P", ] # Removes pitchers for different rules
+
+# league and year 
+by_league_W_pitch <- aggregate(cbind(G, AB, R, H, HR, RBI, SB, BB, SO) ~ lgID + yearID,
+                                data = stats_clean, FUN = sum) 
+# Adds Batting Average
+by_league_W_pitch$BA <- by_league_W_pitch$H / by_league_W_pitch$AB
+
+# league and year no pitcher
+by_league_Wo_pitch <- aggregate(cbind(G, AB, R, H, HR, RBI, SB, BB, SO) ~ lgID + yearID,
+                                 data = stats_wo_pitch, FUN = sum)
+# Adds Batting Average
+by_league_Wo_pitch$BA <- by_league_Wo_pitch$H / by_league_Wo_pitch$AB # Adds Batting Average
+
+# team and year
+by_team <- aggregate(cbind(G, AB, R, H, HR, RBI, SB, BB, SO) ~ teamID + yearID,
+                      data = stats_clean, FUN = sum) 
+# Adds Batting Average
+by_team$BA <- by_team$H / by_team$AB # Adds Batting Average
+
+by_year <- aggregate(cbind(G, AB, R, H, HR, RBI, SB, BB, SO) ~ yearID,
+                      data = stats_clean, FUN = sum) #year
+# Adds Batting Average
+by_year$BA <- by_year$H / by_year$AB # Adds Batting Average
+
+# Position
+by_pos <- aggregate(cbind(G, AB, R, H, HR, RBI, SB, BB, SO) ~ POS,
+                     data = stats_clean, FUN = sum) 
+# Adds Batting Average
+by_pos$BA <- by_pos$H / by_pos$AB 
+
+# rename positions 
+position_names <- c(
+  "1B" = "First Base",
+  "2B" = "Second Base",
+  "3B" = "Third Base",
+  "C"  = "Catcher",
+  "CF" = "Center Field",
+  "LF" = "Left Field",
+  "P"  = "Pitcher",
+  "RF" = "Right Field",
+  "SS" = "Shortstop"
+)
+
+by_pos$POS <- position_names[by_pos$POS]
+
+#Position and Team
+by_team_pos <- aggregate(cbind(AB, H, HR, BB, SO, BA) ~ teamID + POS, data = stats_clean, FUN = sum)  
+# Adds Batting Average
+by_team_pos$BA <- by_team_pos$H / by_team_pos$AB
+
+
+
+by_team_pos$Position <- position_names[by_team_pos$POS]
+```
+
+## Tables
+
+```{r, echo=FALSE}
+# columns of interest
+stat_cols <- c("AB", "R", "H", "HR", "SB", "BB", "SO", "BA")
+
+# generates summary statistics
+compact_summary <- function(df, cols) {
+  
+  variable_names <- c(
+    AB = "At Bats",
+    R = "Runs",
+    H = "Hits",
+    HR = "Home Runs",
+    SB = "Stolen Bases",
+    BB = "Base on Balls",
+    SO = "Strikeouts",
+    BA = "Batting Average"
+  )
+  
+  data.frame(
+    Variable = unname(variable_names[cols]),
+    Minimum = sapply(df[cols], min, na.rm = TRUE),
+    Mean = sapply(df[cols], mean, na.rm = TRUE),
+    Maximum = sapply(df[cols], max, na.rm = TRUE),
+    `Standard Deviation` = sapply(df[cols], sd, na.rm = TRUE),
+    row.names = NULL
+  )
+}
+
+# formats numbers in table
+format_table <- function(table_name) {
+  table_name[, 2:5] <- lapply(
+    table_name[, 2:5],
+    function(x) format(round(x, 3), big.mark = ",", trim = TRUE)
+  )
+  
+  return(table_name)
+}
+
+league_summary_W_pitch <- compact_summary(
+  by_league_W_pitch, 
+  stat_cols
+)
+
+knitr::kable(
+  format_table(league_summary_W_pitch),
+  caption = "Statistics Aggregated by League (With Pitchers)"
+)
+```
+discussion
+
+```{r, echo=FALSE}
+league_summary_Wo_pitch <- compact_summary(
+  by_league_Wo_pitch, 
+  stat_cols
+)
+
+knitr::kable(
+  format_table(league_summary_Wo_pitch),
+  caption = "Statistics Aggregated by League (Without Pitchers)"
+)
+
+```
+discussion
+
+## Plots
+
+```{r, echo=FALSE}
+
+ggplot(by_pos, aes(x = POS, y = BA)) +
+  geom_bar(stat = "identity", fill = "maroon") +
+  labs(
+    title = "Batting Average by Position",
+    x = "Position",
+    y = "Batting Average"
+  )  +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+```
+discussion
+
+```{r, echo=FALSE}
+ggplot(by_team_pos, aes(x = Position, y = SO)) +
+  geom_boxplot(fill="maroon") +
+  labs(
+    title = "Strikeouts Across Teams by Position",
+    x = "Position",
+    y = "Strikeouts"
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+```
+discussion
+
+```{r, echo=FALSE}
+ggplot(by_team, aes(x=H, y=HR)) +
+  geom_point(col="maroon") +
+  labs(
+    title="Hits vs Home Runs Across Teams",
+    x = "Hits",
+    y = "Home Runs"
+  )
+```
+discussion
+
+```{r, echo=FALSE}
+ggplot(by_team, aes(x=SO, y=BA)) +
+  geom_point(col="maroon") +
+  labs(
+    title="Strikeouts vs Batting Average Across Teams",
+    x = "Strikeouts",
+    y = "Batting Averages"
+  )
+
+```
+
+# 4. Citations
+
+Lahman Baseball Database – Society for American Baseball Research. (2025). Retrieved September 12, 2026, from <https://sabr.org/lahman-database/>
+
+# 5. Appendix
+
+## Data Cleaning Code
+
+```r
+## Building data frames 
+
+pos <- read.csv("FieldingPost.csv")
+batting <- read.csv("batting.csv")
+
+stats <- merge(batting, pos[, c("playerID", "POS")],
+               by = "playerID", all.x = TRUE)# Add positions
+
+stats_clean <- stats[stats$lgID == "AL" |
+                    stats$lgID == "NL", ] # Focuses on American and National League
+
+stats_clean <- stats_clean[!is.na(stats_clean$POS), ]  # Removes batting data without positions
+
+stats_clean$BA <- ifelse(stats_clean$AB > 0, stats_clean$H /
+                           stats_clean$AB, NA) ## Adds batting average
+
+stats_wo_pitch <- stats_clean[stats_clean$POS != "P", ] # Removes pitchers for different rules
+
+# league and year 
+by_league_W_pitch <- aggregate(cbind(G, AB, R, H, HR, RBI, SB, BB, SO) ~ lgID + yearID,
+                                data = stats_clean, FUN = sum) 
+# Adds Batting Average
+by_league_W_pitch$BA <- by_league_W_pitch$H / by_league_W_pitch$AB
+
+# league and year no pitcher
+by_league_Wo_pitch <- aggregate(cbind(G, AB, R, H, HR, RBI, SB, BB, SO) ~ lgID + yearID,
+                                 data = stats_wo_pitch, FUN = sum)
+# Adds Batting Average
+by_league_Wo_pitch$BA <- by_league_Wo_pitch$H / by_league_Wo_pitch$AB # Adds Batting Average
+
+# team and year
+by_team <- aggregate(cbind(G, AB, R, H, HR, RBI, SB, BB, SO) ~ teamID + yearID,
+                      data = stats_clean, FUN = sum) 
+# Adds Batting Average
+by_team$BA <- by_team$H / by_team$AB # Adds Batting Average
+
+by_year <- aggregate(cbind(G, AB, R, H, HR, RBI, SB, BB, SO) ~ yearID,
+                      data = stats_clean, FUN = sum) #year
+# Adds Batting Average
+by_year$BA <- by_year$H / by_year$AB # Adds Batting Average
+
+# Position
+by_pos <- aggregate(cbind(G, AB, R, H, HR, RBI, SB, BB, SO) ~ POS,
+                     data = stats_clean, FUN = sum) 
+# Adds Batting Average
+by_pos$BA <- by_pos$H / by_pos$AB 
+
+# rename positions 
+position_names <- c(
+  "1B" = "First Base",
+  "2B" = "Second Base",
+  "3B" = "Third Base",
+  "C"  = "Catcher",
+  "CF" = "Center Field",
+  "LF" = "Left Field",
+  "P"  = "Pitcher",
+  "RF" = "Right Field",
+  "SS" = "Shortstop"
+)
+
+by_pos$POS <- position_names[by_pos$POS]
+
+#Position and Team
+by_team_pos <- aggregate(cbind(AB, H, HR, BB, SO, BA) ~ teamID + POS, data = stats_clean, FUN = sum)  
+# Adds Batting Average
+by_team_pos$BA <- by_team_pos$H / by_team_pos$AB
+
+
+by_team_pos$Position <- position_names[by_team_pos$POS]
+```
+
+## Code for Tables
+
+```r
+# columns of interest
+stat_cols <- c("AB", "R", "H", "HR", "SB", "BB", "SO", "BA")
+
+# generates summary statistics
+compact_summary <- function(df, cols) {
+  
+  variable_names <- c(
+    AB = "At Bats",
+    R = "Runs",
+    H = "Hits",
+    HR = "Home Runs",
+    SB = "Stolen Bases",
+    BB = "Base on Balls",
+    SO = "Strikeouts",
+    BA = "Batting Average"
+  )
+  
+  data.frame(
+    Variable = unname(variable_names[cols]),
+    Minimum = sapply(df[cols], min, na.rm = TRUE),
+    Mean = sapply(df[cols], mean, na.rm = TRUE),
+    Maximum = sapply(df[cols], max, na.rm = TRUE),
+    `Standard Deviation` = sapply(df[cols], sd, na.rm = TRUE),
+    row.names = NULL
+  )
+}
+
+# formats numbers in table
+format_table <- function(table_name) {
+  table_name[, 2:5] <- lapply(
+    table_name[, 2:5],
+    function(x) format(round(x, 3), big.mark = ",", trim = TRUE)
+  )
+  
+  return(table_name)
+}
+
+league_summary_W_pitch <- compact_summary(
+  by_league_W_pitch, 
+  stat_cols
+)
+
+knitr::kable(
+  format_table(league_summary_W_pitch),
+  caption = "Statistics Aggregated by League (With Pitchers)"
+)
+
+league_summary_Wo_pitch <- compact_summary(
+  by_league_Wo_pitch, 
+  stat_cols
+)
+
+knitr::kable(
+  format_table(league_summary_Wo_pitch),
+  caption = "Statistics Aggregated by League (Without Pitchers)"
+)
+
+```
+## Code for Plots
+
+```r
+
+ggplot(by_pos, aes(x = POS, y = BA)) +
+  geom_bar(stat = "identity", fill = "maroon") +
+  labs(
+    title = "Batting Average by Position",
+    x = "Position",
+    y = "Batting Average"
+  )  +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
+ggplot(by_team_pos, aes(x = Position, y = SO)) +
+  geom_boxplot(fill="maroon") +
+  labs(
+    title = "Strikeouts Across Teams by Position",
+    x = "Position",
+    y = "Strikeouts"
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
+ggplot(by_team, aes(x=H, y=HR)) +
+  geom_point(col="maroon") +
+  labs(
+    title="Hits vs Home Runs Across Teams",
+    x = "Hits",
+    y = "Home Runs"
+  )
+
+ggplot(by_team, aes(x=SO, y=BA)) +
+  geom_point(col="maroon") +
+  labs(
+    title="Strikeouts vs Batting Average Across Teams",
+    x = "Strikeouts",
+    y = "Batting Averages"
+  )
+```
