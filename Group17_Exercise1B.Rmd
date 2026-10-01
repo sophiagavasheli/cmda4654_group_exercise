@@ -37,12 +37,17 @@ urlcolor: blue
 #  Here you can set global options for the entire document
 
 library(knitr) # I recommend doing this here
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(e1071)
+library(caret)
 
 # Although you can call functions from a library using the following notation
 #  without loading the entire library.
 knitr::opts_chunk$set(echo = TRUE,
                       comment = NA, # Recommended
-                      fig.path = "./figures1B/",  # Store all figures here in relative path (make the folder first)
+                      fig.path = "./figures/",  # Store all figures here in relative path (make the folder first)
                       fig.align = "center",
                       fig.width = 7,
                       fig.height = 7,
@@ -63,11 +68,12 @@ setwd(here()) # sets path to root of RProject
 Can we predict a team's seasonal runs based on it's offensive stats(KNN Regression)
 
 Can we predict a players position based on their offensive stats(KNN Classification and Naive Bayes)
-
-```{r}
+# Executive Summary and Research Questions 
+For our KNN regression analyis, we wanted to predict a teams seasonal runs based off of its offensive stats. We will use 
+```{r,echo = FALSE}
 pos     <- read.csv("Fielding.csv")
 batting <- read.csv("batting.csv")
-
+team    <- read.csv("Teams.csv")
 # Getting highest position played for players
 primary_pos <- pos %>%
   group_by(playerID, yearID, POS) %>%
@@ -88,20 +94,16 @@ stats_clean <- stats_clean[!is.na(stats_clean$POS), ]
 #####################################################
 ####### REGRESSION !!!!!!!!!
 ## Seperates by team for regression prediction. 
-by_team <- aggregate(cbind(AB, R, H, HR, SB, BB, SO) ~ teamID + yearID,
-                     data = stats_clean, FUN = sum)
 
-
+team_clean <- team[team$lgID %in% c("AL","NL"),]
+team_clean$X1B <- team_clean$H - team_clean$X2B - team_clean$X3B - team_clean$HR
+team_clean$HBPxBB <- team_clean$BB + team_clean$HBP
+team_clean <- team_clean[,c("yearID", "teamID", "R", "X1B", "X2B", "X3B", 
+                            "HR", "SO", "HBPxBB", "SB", "SF", "CS", "AB")]
+team_clean <- team_clean[!is.na(team_clean$SF), ]
+team_clean <- team_clean[!is.na(team_clean$HBPxBB), ]
 # Creates second frame to scale data per at-bat
-by_team_scaled <- by_team
-
-by_team_scaled$H  <- by_team$H  / by_team$AB
-by_team_scaled$HR <- by_team$HR / by_team$AB
-by_team_scaled$BB <- by_team$BB / by_team$AB
-by_team_scaled$SB <- by_team$SB / by_team$AB
-by_team_scaled$SO <- by_team$SO / by_team$AB
-by_team_scaled$BA <- by_team$H  / by_team$AB
-
+team_scaled <- team_clean
 
 ###################################################
 
@@ -129,26 +131,101 @@ pos_data$Position <- factor(position_names[pos_data$POS])
 
 pos_data <- pos_data[, c("playerID", "yearID", "Position",
                          "H", "HR", "BB", "SO", "SB", "AB")]
+NB <- pos_data
 
-pos_data_scaled <- pos_data
+# creates scaled pos_data for Classification comparison and naive Bayes
+pos_scale <- pos_data
 
-pos_data_scaled$BA <- pos_data$H  / pos_data$AB
-pos_data_scaled$HR <- pos_data$HR / pos_data$AB
-pos_data_scaled$BB <- pos_data$BB / pos_data$AB
-pos_data_scaled$SO <- pos_data$SO / pos_data$AB
-pos_data_scaled$SB <- pos_data$SB / pos_data$AB
+pos_scale$BA <- pos_data$H  / pos_data$AB
+pos_scale$HRA <- pos_data$HR / pos_data$AB
+pos_scale$BBA <- pos_data$BB / pos_data$AB
+pos_scale$SOA <- pos_data$SO / pos_data$AB
 
-pos_data_scaled$Position <- factor(position_names[pos_data$POS])
+pos_scale$Position <- factor(position_names[pos_data$Position])
 
-pos_data_scaled <- pos_data_scaled[, c("playerID", "yearID", "Position",
-                                  "BA", "HRA", "BBA", "SOA", "SBA")]
+pos_scale <- pos_scale[, c("playerID", "yearID", "Position",
+                                  "BA", "HRA", "BBA", "SOA")]
 ```
 
 
 
-```{r}
 
+## Naive Bayes
+```{r,echo = FALSE}
+H <- table(pos_scale$Position)# Establish count
+prior <- prop.table(H)# establish prior
+rbind(Count = H, Prior = round(prior, 4))# binds count and prior to one table
 
 ```
+A basic Count/Prior table has the catcher and outfield positions being the most populated.
+```{r,echo = FALSE}
+set.seed(4654)
+idx <- unlist(lapply(split(1:nrow(pos_scale), pos_scale$Position),
+                     function(i) sample(i, round(0.75 * length(i)))))
+trainNB <- pos_scale[idx,]
+testNB <- pos_scale[-idx,]
+fitNB <- naiveBayes(Position ~ BA + HRA + BBA + SOA, data = trainNB)
+fitNB$tables
+```
+All of the predictors are numerical, and therefor modeled with  Gaussian class-conditional densities. Furthermore, there is no need to consider Laplace smoothing.
+```{r,echo = FALSE}
+
+
+mapNB <- predict(fitNB, newdata = testNB, type = "class")
+postNB <- predict(fitNB, newdata = testNB, type = "raw")
+
+pred_dfNB <- data.frame(
+  predicted = mapNB,
+  posterior   = round(apply(postNB, 1, max), 4)
+)
+head(pred_dfNB, 10)
+tabNB <- table(predicted = predict(fitNB, newdata = testNB), actual = testNB$Position)
+tabNB
+```
+I have produced the first 10 hard predictions and soft posteriors. Below that is the accompanying prediction matrix.
+
+```{r,echo = FALSE}
+cmNB <- confusionMatrix(tabNB)
+yNB    <- testNB$Position
+p_trueNB <- postNB[cbind(1:nrow(testNB), match(as.character(yNB), colnames(postNB)))]
+loglossNB <- -mean(log(pmax(p_trueNB)))
+```
+
+
+```{r,echo = FALSE}
+pi_trainNB <- prop.table(table(trainNB$Position))
+maj <- names(which.max(pi_trainNB))
+loglossnullNB <- -mean(log(pi_trainNB[as.character(yNB)]))
+pred_null <- factor(rep(maj, nrow(testNB)), levels = levels(yNB))
+tab_null <- table(predicted = pred_null, actual = yNB)
+tab_null
+
+```
+The prediction matrix for the null model follows the earlier count and prior, showing that Catcher was the most populated position in the data set.
+
+```{r,echo = FALSE}
+
+cm_nullNB <- confusionMatrix(table(factor(rep(maj, nrow(testNB)), levels = levels(yNB)), yNB))
+```
+The Confusion matrix for the null model.
+
+```{r, echo = FALSE}
+######################################
+# Naive Bayes
+
+########################
+
+
+results <- data.frame(
+  Model    = c("Naive Bayes", "No-skill"),
+  Accuracy = c(cmNB$overall["Accuracy"], cm_nullNB$overall["Accuracy"]),
+  BalAcc   = c(mean(cmNB$byClass[, "Balanced Accuracy"]),
+               mean(cm_nullNB$byClass[, "Balanced Accuracy"])),       # baseline 0.5
+  Kappa    = c(cmNB$overall["Kappa"], cm_nullNB$overall["Kappa"]),      # baseline 0
+  LogLoss  = c(loglossNB, loglossnullNB)
+)
+results
+```
+Comparison between Naive Bayes and Null model
 
 
