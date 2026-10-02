@@ -347,33 +347,40 @@ rbind(Count = H, Prior = round(prior, 4))# binds count and prior to one table
 ```
 A basic Count/Prior table has the catcher and outfield positions being the most populated.
 ```{r,echo = FALSE}
+# Splits train/test 70/30
 set.seed(4654)
 idx <- unlist(lapply(split(1:nrow(pos_scale), pos_scale$Position),
                      function(i) sample(i, round(0.7 * length(i)))))
 trainNB <- pos_scale[idx,]
 testNB <- pos_scale[-idx,]
-fitNB <- naiveBayes(Position ~ BA + HRA + BBA + SOA, data = trainNB)
-fitNB$tables
+# gives categorical likelihood tables
+fitNB <- naiveBayes(Position ~ BA + HRA + BBA + SOA, data = trainNB) 
+fitNB$tables 
 ```
-All of the predictors are numerical, and therefor modeled with  Gaussian class-conditional densities. Furthermore, there is no need to consider Laplace smoothing.
+
 ```{r,echo = FALSE}
 
-
-mapNB <- predict(fitNB, newdata = testNB, type = "class")
+# class prediction and its posterior
+mapNB <- predict(fitNB, newdata = testNB, type = "class") 
 postNB <- predict(fitNB, newdata = testNB, type = "raw")
 
+#data frame of predictions and posteriors
 pred_dfNB <- data.frame(
   predicted = mapNB,
   posterior   = round(apply(postNB, 1, max), 4)
 )
 head(pred_dfNB, 10)
+# Prediction matrix
 tabNB <- table(predicted = predict(fitNB, newdata = testNB), actual = testNB$Position)
 tabNB
 ```
 I have produced the first 10 hard predictions and soft posteriors. Below that is the accompanying prediction matrix.
 
 ```{r,echo = FALSE}
+# Confusion matrix 
 cmNB <- confusionMatrix(tabNB)
+
+#log loss scores
 yNB    <- testNB$Position
 p_trueNB <- postNB[cbind(1:nrow(testNB), match(as.character(yNB), colnames(postNB)))]
 loglossNB <- -mean(log(pmax(p_trueNB)))
@@ -381,10 +388,12 @@ loglossNB <- -mean(log(pmax(p_trueNB)))
 
 
 ```{r,echo = FALSE}
+#null model
 pi_trainNB <- prop.table(table(trainNB$Position))
 maj <- names(which.max(pi_trainNB))
 loglossnullNB <- -mean(log(pi_trainNB[as.character(yNB)]))
 pred_null <- factor(rep(maj, nrow(testNB)), levels = levels(yNB))
+#null prediction matrix
 tab_null <- table(predicted = pred_null, actual = yNB)
 tab_null
 
@@ -392,18 +401,13 @@ tab_null
 The prediction matrix for the null model follows the earlier count and prior, showing that Catcher was the most populated position in the data set.
 
 ```{r,echo = FALSE}
-
+# null confusion matrix
 cm_nullNB <- confusionMatrix(table(factor(rep(maj, nrow(testNB)), levels = levels(yNB)), yNB))
 ```
 The Confusion matrix for the null model.
 
 ```{r, echo = FALSE}
-######################################
-# Naive Bayes
-
-########################
-
-
+# prints metric scores for comparison between null and prediction
 results <- data.frame(
   Model    = c("Naive Bayes", "No-skill"),
   Accuracy = c(cmNB$overall["Accuracy"], cm_nullNB$overall["Accuracy"]),
@@ -414,6 +418,259 @@ results <- data.frame(
 )
 results
 ```
-Comparison between Naive Bayes and Null model
+## Comparison between Naive Bayes and Null model
+
+# 5. Discussion and Real World Implications
+
+# 6. Citations and Data Link
+The data is linked [here](https://sabr.app.box.com/s/y1prhc795jk8zvmelfd3jq7tl389y6cd). We downloaded `Fielding.csv`, `batting.csv`, and `Teams.csv`.
+
+# 7. Appendix
+
+## Data cleaning
+```r
+pos     <- read.csv("Fielding.csv")
+batting <- read.csv("batting.csv")
+team    <- read.csv("Teams.csv")
+# Getting highest position played for players
+primary_pos <- pos %>%
+  group_by(playerID, yearID, POS) %>%
+  summarise(G = sum(G), .groups = "drop") %>%
+  group_by(playerID, yearID) %>%
+  slice_max(G, n = 1, with_ties = FALSE) %>%
+  select(playerID, yearID, POS)
+
+# Merge Position into Player and Year to condense data
+stats <- merge(batting, primary_pos,
+               by = c("playerID", "yearID"), all.x = TRUE)
+
+# Keeps only American and National League
+stats_clean <- stats[stats$lgID %in% c("AL", "NL"), ]
+stats_clean <- stats_clean[!is.na(stats_clean$POS), ]
 
 
+#####################################################
+####### REGRESSION !!!!!!!!!
+## Separates by team for regression prediction. 
+
+team_clean <- team[team$lgID %in% c("AL","NL"),] # Keeps only AL and NL
+team_clean$X1B <- team_clean$H - team_clean$X2B - team_clean$X3B - team_clean$HR # Creates X1B
+team_clean$HBPxBB <- team_clean$BB + team_clean$HBP # Creates HBPxBB
+
+
+# Takes only the necessary data
+team_clean <- team_clean[,c("yearID", "teamID","G", "R", "X1B", "X2B", "X3B", 
+                            "HR", "SO", "HBPxBB", "SB", "SF", "CS", "AB")] 
+
+#Divides stats by games to establish per game base
+stats <- c("R", "X1B", "X2B", "X3B", "HR", "SO", "HBPxBB", "SB", "SF")
+team_clean[stats] <- team_clean[stats] / team_clean$G
+
+team_clean <- team_clean[!is.na(team_clean$SF), ]# Removes NaN values from SF
+team_clean <- team_clean[!is.na(team_clean$HBPxBB), ]# Removes NaN values from HBPxBB
+
+# List of predictors for training
+num_vars <- c("X1B", "X2B", "X3B", "HR", "SO", "HBPxBB", "SB", "SF", "CS", "AB") 
+
+
+###################################################
+
+# CLASSIFICATION AND BAYES!!!!!!!!!!!!!
+# Keeps only At Bats > 100
+pos_data <- stats_clean[stats_clean$AB >= 100, ] 
+
+# Changes The infield positions into a common infield tab
+for(i in 1:length(pos_data$POS)){
+  if(pos_data$POS[i] == "1B" || 
+     pos_data$POS[i] == "2B" ||
+     pos_data$POS[i] == "3B" ||
+     pos_data$POS[i] == "SS" ){
+    pos_data$POS[i] = "IF"
+  }
+}
+# For easier referral
+position_names <- c(
+  "IF" = "Infield",
+  "C"  = "Catcher",
+  "OF" = "Outfield",
+  "P"  = "Pitcher"
+)
+
+#Factors Positions into levels
+pos_data$Position <- factor(position_names[pos_data$POS])
+
+#Keep only necessary data
+pos_data <- pos_data[, c("playerID", "yearID", "Position",
+                         "H", "HR", "BB", "SO", "SB", "AB")]
+
+# creates scaled pos_data for Classification comparison and naive Bayes
+pos_scale <- pos_data
+
+pos_scale$BA <- pos_data$H  / pos_data$AB
+pos_scale$HRA <- pos_data$HR / pos_data$AB
+pos_scale$BBA <- pos_data$BB / pos_data$AB
+pos_scale$SOA <- pos_data$SO / pos_data$AB
+
+# Factors Pos_Scaled
+pos_scale$Position <- factor(position_names[pos_data$Position])
+
+#Adds scaled variables into pos_scaled
+pos_scale <- pos_scale[, c("playerID", "yearID", "Position",
+                                  "BA", "HRA", "BBA", "SOA")]
+ 
+```
+
+## Scale vs Unscale Distance
+```r
+#creates table for unscaled distances
+d2 <-(team_clean[1, num_vars] - team_clean[2, num_vars])^2
+round(rbind(squared_diff = unlist(d2), percent = 100*unlist(d2) / sum(d2)),2)
+
+# table for scaled distances
+z <- scale(team_clean[, num_vars])
+d2z <- (z[1,] - z[2,])^2
+round(rbind(squared_diff = d2z, percent = 100*d2z/sum(d2z)),2)
+```
+## KNN Regression
+```r
+
+#splits training/testing 70/30
+set.seed(4654)
+index <- sample(1:nrow(team_clean), round(nrow(team_clean) * 0.7))
+training_df <- scale(team_clean[index, num_vars])
+testing_df  <- scale(team_clean[-index, num_vars],
+                     center = attr(training_df, "scaled:center"),
+                     scale  = attr(training_df, "scaled:scale"))
+
+train_pred <- team_clean$R[index]
+test_pred <- team_clean$R[-index]
+
+# Cross Validation for best K
+set.seed(4654)
+folds <- sample(rep(1:10, length.out = nrow(training_df)))
+
+cv_rmse <- function(k) {
+  sq_err <- unlist(lapply(1:10, function(f) {
+    tr_x <- training_df[folds != f, ]
+    te_x <- training_df[folds == f, ]
+    tr_y <- train_pred[folds != f]
+    te_y <- train_pred[folds == f]
+    pred <- knn.reg(train = tr_x, test = te_x, y = tr_y, k = k)$pred
+    (te_y - pred)^2
+  }))
+  sqrt(mean(sq_err))
+}
+
+k_cv <- 1:80
+cv_results <- data.frame(k = k_cv, RMSE = sapply(k_cv, cv_rmse))
+k_best <- cv_results$k[which.min(cv_results$RMSE)]
+
+#Training knn for values
+train_rmse <- function(k) {
+  pred <- knn.reg(train = training_df, test = training_df, y = train_pred, k = k)$pred
+  sqrt(mean((train_pred - pred)^2))
+}
+cv_results$Train_RMSE <- sapply(cv_results$k, train_rmse)
+
+# plot showing best k and training rmse results
+ggplot(cv_results, aes(x = k)) +
+  geom_line(aes(y = RMSE, color = "10-fold CV"), linewidth = 1) +
+  geom_line(aes(y = Train_RMSE, color = "Training"), linewidth = 1) +
+  geom_point(data = cv_results[cv_results$k == k_best, ],
+             aes(y = RMSE), color = "red", size = 4) +
+  scale_color_manual(values = c("10-fold CV" = "#8B2346", "Training" = "gray50")) +
+  labs(title = paste0("Cross-validated choice:  k = ", k_best),
+       x = "k", y = "RMSE", color = NULL) +
+  theme_bw(base_size = 14)
+
+
+top_k <- head(cv_results[order(cv_results$RMSE), ], 5)
+top_k$RMSE   <- round(top_k$RMSE, 3)
+rownames(top_k) <- NULL
+top_k # plot showing top 5 ks and their RMSE
+
+
+final_pred <- knn.reg(train = training_df, test = testing_df,
+                      y = train_pred, k = k_best)$pred
+
+rmse      <- function(a, b) sqrt(mean((a - b)^2))
+mae       <- function(a, b) mean(abs(a - b))
+r_squared <- function(a, b) 1 - sum((a - b)^2) / sum((a - mean(a))^2)
+
+null_prediction <- rep(mean(train_pred), length(test_pred))
+
+results <- data.frame(
+  Model = c("Null (training mean)", paste0("KNN (k = ", k_best, ")")),
+  RMSE  = c(rmse(test_pred, null_prediction), rmse(test_pred, final_pred)),
+  MAE   = c(mae(test_pred, null_prediction),  mae(test_pred, final_pred)),
+  R2    = c(r_squared(test_pred, null_prediction), r_squared(test_pred, final_pred))
+)
+results[, -1] <- round(results[, -1], 3)
+results
+```
+## KNN Classification
+
+## Naive Bayes
+```r
+H <- table(pos_scale$Position)# Establish count
+prior <- prop.table(H)# establish prior
+rbind(Count = H, Prior = round(prior, 4))# binds count and prior to one table
+
+# Splits train/test 70/30
+set.seed(4654)
+idx <- unlist(lapply(split(1:nrow(pos_scale), pos_scale$Position),
+                     function(i) sample(i, round(0.7 * length(i)))))
+trainNB <- pos_scale[idx,]
+testNB <- pos_scale[-idx,]
+# gives categorical likelihood tables
+fitNB <- naiveBayes(Position ~ BA + HRA + BBA + SOA, data = trainNB) 
+fitNB$tables 
+
+# class prediction and its posterior
+mapNB <- predict(fitNB, newdata = testNB, type = "class") 
+postNB <- predict(fitNB, newdata = testNB, type = "raw")
+
+#data frame of predictions and posteriors
+pred_dfNB <- data.frame(
+  predicted = mapNB,
+  posterior   = round(apply(postNB, 1, max), 4)
+)
+head(pred_dfNB, 10)
+# Prediction matrix
+tabNB <- table(predicted = predict(fitNB, newdata = testNB), actual = testNB$Position)
+tabNB
+
+# Confusion matrix 
+cmNB <- confusionMatrix(tabNB)
+
+#log loss scores
+yNB    <- testNB$Position
+p_trueNB <- postNB[cbind(1:nrow(testNB), match(as.character(yNB), colnames(postNB)))]
+loglossNB <- -mean(log(pmax(p_trueNB)))
+
+#null model
+pi_trainNB <- prop.table(table(trainNB$Position))
+maj <- names(which.max(pi_trainNB))
+loglossnullNB <- -mean(log(pi_trainNB[as.character(yNB)]))
+pred_null <- factor(rep(maj, nrow(testNB)), levels = levels(yNB))
+#null prediction matrix
+tab_null <- table(predicted = pred_null, actual = yNB)
+tab_null
+
+# null confusion matrix
+cm_nullNB <- confusionMatrix(table(factor(rep(maj, nrow(testNB)), levels = levels(yNB)), yNB))
+
+# prints metric scores for comparison between null and prediction
+results <- data.frame(
+  Model    = c("Naive Bayes", "No-skill"),
+  Accuracy = c(cmNB$overall["Accuracy"], cm_nullNB$overall["Accuracy"]),
+  BalAcc   = c(mean(cmNB$byClass[, "Balanced Accuracy"]),
+               mean(cm_nullNB$byClass[, "Balanced Accuracy"])),       # baseline 0.5
+  Kappa    = c(cmNB$overall["Kappa"], cm_nullNB$overall["Kappa"]),      # baseline 0
+  LogLoss  = c(loglossNB, loglossnullNB)
+)
+results
+
+```
+
+## Comparison
