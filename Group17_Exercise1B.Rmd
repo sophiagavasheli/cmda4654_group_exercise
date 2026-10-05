@@ -88,10 +88,10 @@ We are using a KNN regression model to predict the runs a team scored in any giv
 | `SH`       | Sacrifice Hits                                        |
 | `SF`       | Sacrifice Flies                                       |
 
-The data frame that these variables were taken from was not used in part A of our exercise. Using runs as a metric was an explored idea in part A, but was not used in our final report, so we decided to further explore it here, as it was a simple an obvious choice for regression.
+The data frame that these variables were taken from was not used in part A of our exercise, but is still part of the larger data set we pulled from. Using runs as a metric was an explored idea in part A, but was not used in our final report, so we decided to further explore it here, since it looked like it could have a relationship with the other variables like home runs and at bats.
 
 ## KNN Classification and Naive Bayes
-For our KNN Classification and Naive Bayes models, we chose to predict a players position using their offensive stats.
+For our KNN Classification and Naive Bayes models, we chose to predict a player's position using the following offensive stats:
 
 | Variable   | Description                                           |
 |------------|-------------------------------------------------------|
@@ -127,8 +127,7 @@ stats_clean <- stats[stats$lgID %in% c("AL", "NL"), ]
 stats_clean <- stats_clean[!is.na(stats_clean$POS), ]
 
 
-#####################################################
-####### REGRESSION !!!!!!!!!
+####### REGRESSION 
 ## Separates by team for regression prediction. 
 
 team_clean <- team[team$lgID %in% c("AL","NL"),] # Keeps only AL and NL
@@ -141,7 +140,7 @@ team_clean <- team_clean[,c("yearID", "teamID","G", "R", "X1B", "X2B", "X3B",
                             "HR", "SO", "HBPxBB", "SB", "SF", "CS", "AB")] 
 
 #Divides stats by games to establish per game base
-stats <- c("R", "X1B", "X2B", "X3B", "HR", "SO", "HBPxBB", "SB", "SF")
+stats <- c("R", "X1B", "X2B", "X3B", "HR", "SO", "HBPxBB", "SB", "SF", "CS", "AB")
 team_clean[stats] <- team_clean[stats] / team_clean$G
 
 team_clean <- team_clean[!is.na(team_clean$SF), ]# Removes NaN values from SF
@@ -151,9 +150,7 @@ team_clean <- team_clean[!is.na(team_clean$HBPxBB), ]# Removes NaN values from H
 num_vars <- c("X1B", "X2B", "X3B", "HR", "SO", "HBPxBB", "SB", "SF", "CS", "AB") 
 
 
-###################################################
-
-# CLASSIFICATION AND BAYES!!!!!!!!!!!!!
+##### CLASSIFICATION AND BAYES
 # Keeps only At Bats > 100
 pos_data <- stats_clean[stats_clean$AB >= 100, ] 
 
@@ -188,9 +185,6 @@ pos_scale$BA <- pos_data$H  / pos_data$AB
 pos_scale$HRA <- pos_data$HR / pos_data$AB
 pos_scale$BBA <- pos_data$BB / pos_data$AB
 pos_scale$SOA <- pos_data$SO / pos_data$AB
-
-# Factors Pos_Scaled
-pos_scale$Position <- factor(position_names[pos_data$Position])
 
 #Adds scaled variables into pos_scaled
 pos_scale <- pos_scale[, c("playerID", "yearID", "Position",
@@ -200,199 +194,347 @@ pos_scale <- pos_scale[, c("playerID", "yearID", "Position",
 
 # 3. Methodology & Modeling Setup
 
-## Training Split
-We kept with the 70/30 training split that was found in our notes. The data sets were very large, and we preferred to keep the majority in our training.
+## Data Preprocessing
 
-## Data Reprocessing
-### KNN Regression
+All of our predictors were numerical, so there was no need to handle categorical leveling or do any smoothing to our data.
+
+We did a 70/30 training-test split since the data sets were very large, and we preferred to keep the majority in our training.
+
+### KNN regression
+
 For our KNN regression, `Teams.csv` includes a great many more predictors than what was used.
-We build the data frame `team_clean`, which keeps only the American and National leagues, removes NaN rows, and takes in only our predictors, TeamId, yearID, and our prediction variable Runs. We also combined the HBP and BB predictors into one, as they provide the same outcome in a game. We also divided all of our predictors by games to establish the per game basis for our prediction.
+We built the data frame `team_clean`, which keeps only the American and National leagues, removes `NaN` rows, and takes in only our predictors, `TeamId`, `yearID`, and our prediction variable `Runs.` We also combined the `HBP` and `BB` predictors into one, as they provide the same outcome in a game. We also divided all of our predictors by games to establish the per game basis for our prediction.
 
 We standardized our data set under the basic z-score scaling. As mentioned above, the predictor `HBPxBB` was a sum of two predictors, and was unfairly weighted against our other data. Furthermore, given the nature of the game, some of our predictors had a reported 0 weight on our distance, so standardizing was necessary.
 
-#### Raw table
+The table below shows why scaling matters: for two team-seasons, the unscaled distance is dominated by a few large-valued predictors, while after z-scoring each predictor contributes a more balanced share.
+
 ```{r, echo = FALSE}
-#creates table for unscaled distances
-d2 <-(team_clean[1, num_vars] - team_clean[2, num_vars])^2
-round(rbind(squared_diff = unlist(d2), percent = 100*unlist(d2) / sum(d2)),2)
+# table format
+tbl <- function(x, cap, digits = 3, rn = FALSE, ...) {
+  knitr::kable(x, booktabs = TRUE, caption = cap, digits = digits,
+               position = "H", row.names = rn, ...)
+}
+
+d2  <- unlist((team_clean[1, num_vars] - team_clean[2, num_vars])^2)
+z   <- scale(team_clean[, num_vars])
+d2z <- (z[1, ] - z[2, ])^2
+demo <- rbind("Raw (share of squared distance, pct)"          = 100 * d2  / sum(d2),
+              "Z-scored (share of squared distance, pct)"     = 100 * d2z / sum(d2z))
+tbl(demo, "Share of squared Euclidean distance contributed by each predictor (first two team-seasons).",
+    digits = 1, rn = TRUE)
 ```
 
-#### Scaled Table
-```{r, echo = FALSE}
-# table for scaled distances
-z <- scale(team_clean[, num_vars])
-d2z <- (z[1,] - z[2,])^2
-round(rbind(squared_diff = d2z, percent = 100*d2z/sum(d2z)),2)
-```
+### KNN and Naive Bayes Classification
 
-### KNN Classification and Naive Bayes
-For our KNN classification and Naive Bayes models, we first created `primary_pos`, which read through the player's data, found there most played position, and changed their other reported positions to the highest one. We then combined `primary_pos`with batting, based on their playerId and the yearID, so that we could compare the positions to their offensive stats. We also took only the American and National league players to follow our analyis in part A. 
+For our KNN classification and Naive Bayes models, we first created `primary_pos`, which read through the player's data, found their most played position, and changed their other reported positions to the highest one. We then combined `primary_pos`with batting, based on their `playerId` and the `yearID`, so that we could compare the positions to their offensive stats. We also took only the American and National league players, following our analysis in part A. 
 
 We wanted to limit classification responses, so we combined the infield positions (1B,2B,3B, SS) into an `Infield` category. 
 
-In baseball, different positions get differing amounts of playtime. Furthermore, because we combined four possible positions into one, our data was even more skewed, and in the case of KNN classification, our distances would be poorly weighted. We therefore decided to scale all of our predictors based on At bats, providing the predictors described above(BA, HRA, BBA, SOA). While the standardizing would have less affect on our Naive Bayes model, since our goal is to compare it with our classification, we chose to scale the predictors before running either model.
+In baseball, different positions get different amounts of playtime. Furthermore, because we combined four possible positions into one, our data was even more skewed, and in the case of KNN classification, our distances would be poorly weighted. We therefore decided to scale all of our predictors based on At bats, providing the predictors described above(BA, HRA, BBA, SOA). While the standardizing would have less affect on our Naive Bayes model, since our goal is to compare it with our classification, we chose to scale the predictors before running either model.
 
-All of our predictors were numerical, so there was no need to handle categorical leveling or do any smoothing to our data.
 
 \clearpage
 
 # 4. Analysis, Tuning & Results
+```{r,echo = FALSE}
+
+#regression split 70/30
+set.seed(4654)
+idx_reg   <- sample(nrow(team_clean), round(0.7 * nrow(team_clean)))
+train_raw <- team_clean[idx_reg, num_vars]
+test_raw  <- team_clean[-idx_reg, num_vars]
+train_y   <- team_clean$R[idx_reg]
+test_y    <- team_clean$R[-idx_reg]
+
+mu_reg      <- colMeans(train_raw)
+sd_reg      <- apply(train_raw, 2, sd)
+training_df <- scale(train_raw, center = mu_reg, scale = sd_reg)
+testing_df  <- scale(test_raw,  center = mu_reg, scale = sd_reg)
+
+# classification split (knn and nb)
+feats <- c("BA", "HRA", "BBA", "SOA")
+set.seed(4654)
+idx_cls <- unlist(lapply(split(seq_len(nrow(pos_scale)), pos_scale$Position),
+                         function(i) sample(i, round(0.7 * length(i)))))
+cls_train <- pos_scale[idx_cls, ]
+cls_test  <- pos_scale[-idx_cls, ]
+
+mu_cls  <- colMeans(cls_train[, feats])
+sd_cls  <- apply(cls_train[, feats], 2, sd)
+train_x <- scale(cls_train[, feats], center = mu_cls, scale = sd_cls)
+test_x  <- scale(cls_test[, feats],  center = mu_cls, scale = sd_cls)
+
+lv   <- levels(pos_scale$Position)
+K    <- length(lv)
+y_tr <- as.integer(cls_train$Position)
+y_te <- as.integer(cls_test$Position)
+
+# 
+pi_train     <- prop.table(table(cls_train$Position))[lv]
+null_entropy <- -sum(pi_train * log(pi_train))
+```
 
 ##  KNN Regression
 
 ###  K Tuning with Cross Validation
-```{r,echo = FALSE}
 
-#splits training/testing 70/30
+We searched $k = 1, \ldots, 80$ using 10-fold CV on the training data only.
+
+```{r fig.cap = "kNN regression tuning: cross-validated and training RMSE versus k. The red point marks the CV-optimal k. "}
 set.seed(4654)
-index <- sample(1:nrow(team_clean), round(nrow(team_clean) * 0.7))
-training_df <- scale(team_clean[index, num_vars])
-testing_df  <- scale(team_clean[-index, num_vars],
-                     center = attr(training_df, "scaled:center"),
-                     scale  = attr(training_df, "scaled:scale"))
+folds <- sample(rep(1:10, length.out = nrow(train_raw)))
 
-train_pred <- team_clean$R[index]
-test_pred <- team_clean$R[-index]
-
-# Cross Validation for best K
-set.seed(4654)
-folds <- sample(rep(1:10, length.out = nrow(training_df)))
+# Scale inside every fold using ONLY that fold's fitting data (no leakage)
+fold_data <- lapply(1:10, function(f) {
+  tr <- train_raw[folds != f, ]
+  va <- train_raw[folds == f, ]
+  m  <- colMeans(tr)
+  s  <- apply(tr, 2, sd)
+  list(tr_x = scale(tr, center = m, scale = s),
+       va_x = scale(va, center = m, scale = s),
+       tr_y = train_y[folds != f],
+       va_y = train_y[folds == f])
+})
 
 cv_rmse <- function(k) {
-  sq_err <- unlist(lapply(1:10, function(f) {
-    tr_x <- training_df[folds != f, ]
-    te_x <- training_df[folds == f, ]
-    tr_y <- train_pred[folds != f]
-    te_y <- train_pred[folds == f]
-    pred <- knn.reg(train = tr_x, test = te_x, y = tr_y, k = k)$pred
-    (te_y - pred)^2
+  sq_err <- unlist(lapply(fold_data, function(d) {
+    pred <- knn.reg(train = d$tr_x, test = d$va_x, y = d$tr_y, k = k)$pred
+    (d$va_y - pred)^2
   }))
   sqrt(mean(sq_err))
 }
 
-k_cv <- 1:80
-cv_results <- data.frame(k = k_cv, RMSE = sapply(k_cv, cv_rmse))
+train_rmse <- function(k) {
+  pred <- knn.reg(train = training_df, test = training_df, y = train_y, k = k)$pred
+  sqrt(mean((train_y - pred)^2))
+}
+
+k_cv       <- 1:80
+cv_results <- data.frame(k = k_cv,
+                         RMSE = sapply(k_cv, cv_rmse),
+                         Train_RMSE = sapply(k_cv, train_rmse))
 k_best <- cv_results$k[which.min(cv_results$RMSE)]
 
-#Training knn for values
-train_rmse <- function(k) {
-  pred <- knn.reg(train = training_df, test = training_df, y = train_pred, k = k)$pred
-  sqrt(mean((train_pred - pred)^2))
-}
-cv_results$Train_RMSE <- sapply(cv_results$k, train_rmse)
-
-# plot showing best k and training rmse results
 ggplot(cv_results, aes(x = k)) +
   geom_line(aes(y = RMSE, color = "10-fold CV"), linewidth = 1) +
   geom_line(aes(y = Train_RMSE, color = "Training"), linewidth = 1) +
   geom_point(data = cv_results[cv_results$k == k_best, ],
              aes(y = RMSE), color = "red", size = 4) +
-  scale_color_manual(values = c("10-fold CV" = "#8B2346", "Training" = "gray50")) +
-  labs(title = paste0("Cross-validated choice:  k = ", k_best),
-       x = "k", y = "RMSE", color = NULL) +
-  theme_bw(base_size = 14)
+  scale_color_manual(values = c("10-fold CV" = "#8B2346", "Training" = "orange")) +
+  labs(
+       x = "k", y = "RMSE of Runs per game", color = NULL) +
+  theme_bw(base_size = 12)
+```
 
+The CV-optimal value is $k^* = `r k_best`$. Very small $k$ gives a near-zero training RMSE (each point is nearly its own neighbor) but a worse CV RMSE, which is overfitting. As $k$ becomes large the two curves rise together, which is underfitting.
 
-top_k <- head(cv_results[order(cv_results$RMSE), ], 5)
-top_k$RMSE   <- round(top_k$RMSE, 3)
-rownames(top_k) <- NULL
-top_k # plot showing top 5 ks and their RMSE
+```{r}
+top_k <- head(cv_results[order(cv_results$RMSE), c("k", "RMSE", "Train_RMSE")], 5)
+names(top_k) <- c("k", "CV RMSE", "Training RMSE")
+tbl(top_k, paste0("Top five candidate values of k by cross-validated RMSE. The chosen optimum is k = ",
+                  k_best, "."))
 ```
 
 \clearpage 
 
-###  Final predictions compared to null on k = 8
+### Test-set performance versus the null model
 
 ```{r,echo=FALSE}
-final_pred <- knn.reg(train = training_df, test = testing_df,
-                      y = train_pred, k = k_best)$pred
+final_pred <- knn.reg(train = training_df, test = testing_df, y = train_y, k = k_best)$pred
 
 rmse      <- function(a, b) sqrt(mean((a - b)^2))
 mae       <- function(a, b) mean(abs(a - b))
 r_squared <- function(a, b) 1 - sum((a - b)^2) / sum((a - mean(a))^2)
 
-null_prediction <- rep(mean(train_pred), length(test_pred))
+null_prediction <- rep(mean(train_y), length(test_y))
 
 results <- data.frame(
   Model = c("Null (training mean)", paste0("KNN (k = ", k_best, ")")),
-  RMSE  = c(rmse(test_pred, null_prediction), rmse(test_pred, final_pred)),
-  MAE   = c(mae(test_pred, null_prediction),  mae(test_pred, final_pred)),
-  R2    = c(r_squared(test_pred, null_prediction), r_squared(test_pred, final_pred))
+  RMSE  = c(rmse(test_y, null_prediction), rmse(test_y, final_pred)),
+  MAE   = c(mae(test_y, null_prediction),  mae(test_y, final_pred)),
+  R2    = c(r_squared(test_y, null_prediction), r_squared(test_y, final_pred))
 )
+
 results[, -1] <- round(results[, -1], 3)
-results
+
+names(results)[4] <- "R-squared"
+tbl(results, "kNN regression on the held-out test set versus the null (mean-only) model.")
 ```
-#### RMSE
+**RMSE:** Our null model was off by about half of a run every game when predicting the training average. Our k = 9 was off by about a quarter of a run every game, which is about a 50% reduction compared to our null model.
 
-Our null model was off by about half of a run every game when predicting the training average. Our k = 8 was off by about a quarter of a run every game, which is about a 50% reduction compared to our null model.
+**MAE:** Our null models' absolute average miss is a little under half a run every game. The k = 9 model was off a little under half that, also being a little more than a 50% reduction compared to the null.
 
-#### MAE
-Our null models' absolute average miss is a little under half a run every game. I k=8 model was off a little under half that, also being a little more than a 50% reduction compared to the null.
-
-#### $R^2$
-As expected, our null model takes 0% of the predictors into account for its predictions. However, our k = 8 model takes close to 81%, signifying that the 10 predictors are a strong representation of the runs scored.
+**R Squared:** As expected, our null model takes 0% of the predictors into account for its predictions. However, our k = 9 model takes 82%, signifying that the 10 predictors are a strong representation of the runs scored.
 
 \clearpage
 
 ##  KNN Classification
+```{r}
+# helpers
+onehot  <- function(y_int) diag(K)[y_int, , drop = FALSE]
+logloss <- function(P, y_int) -mean(log(pmax(P[cbind(seq_along(y_int), y_int)], 1e-15)))
+brier   <- function(P, y_int) mean(rowSums((P - onehot(y_int))^2))
+pred_from_P <- function(P) max.col(P, ties.method = "first")   # argmax rule
 
+conf_tab <- function(pred_int, y_int)
+  table(Predicted = factor(pred_int, levels = 1:K, labels = lv),
+        Actual    = factor(y_int,    levels = 1:K, labels = lv))
+
+# One-versus-all metrics per class from a confusion matrix
+per_class <- function(cm) {
+  TP <- diag(cm); FP <- rowSums(cm) - TP; FN <- colSums(cm) - TP
+  TN <- sum(cm) - TP - FP - FN
+  sens <- TP / (TP + FN); spec <- TN / (TN + FP)
+  data.frame(Class = colnames(cm),
+             Sensitivity = sens,
+             Specificity = spec,
+             Precision   = ifelse(TP + FP == 0, NA, TP / (TP + FP)),
+             F1          = 2 * TP / (2 * TP + FP + FN),
+             BalAcc      = (sens + spec) / 2)
+}
+
+# Overall summary
+summ <- function(P, pred_int, y_int) {
+  cm <- conf_tab(pred_int, y_int); pc <- per_class(cm); n <- sum(cm)
+  po <- sum(diag(cm)) / n
+  pe <- sum(rowSums(cm) * colSums(cm)) / n^2
+  c(Accuracy = po,
+    BalAcc   = mean(pc$BalAcc),
+    MacroF1  = mean(pc$F1),
+    Kappa    = (po - pe) / (1 - pe),
+    LogLoss  = logloss(P, y_int),
+    Brier    = brier(P, y_int))
+}
+```
+
+```{r}
+k_grid <- seq(1, 51, by = 2)
+kmax   <- max(k_grid)
+
+
+nbr_labels <- function(train_mat, query_mat, y_int, kmax) {
+  nn <- FNN::knnx.index(train_mat, query_mat, k = kmax)
+  matrix(y_int[nn], nrow = nrow(nn))
+}
+
+# Smoothed vote fractions: (votes + 1) / (k + K)
+prob_k <- function(NL, k) {
+  votes <- sapply(seq_len(K), function(cl) rowSums(NL[, seq_len(k), drop = FALSE] == cl))
+  P <- (votes + 1) / (k + K)
+  colnames(P) <- lv
+  P
+}
+
+#10-fold CV
+set.seed(4654)
+folds_c <- sample(rep(1:10, length.out = nrow(cls_train)))
+NL_cv   <- matrix(NA_integer_, nrow(cls_train), kmax)
+for (f in 1:10) {
+  tr <- which(folds_c != f)
+  va <- which(folds_c == f)
+  m  <- colMeans(cls_train[tr, feats])
+  s  <- apply(cls_train[tr, feats], 2, sd)
+  NL_cv[va, ] <- nbr_labels(scale(cls_train[tr, feats], center = m, scale = s),
+                            scale(cls_train[va, feats], center = m, scale = s),
+                            y_tr[tr], kmax)
+}
+NL_train <- nbr_labels(train_x, train_x, y_tr, kmax)   # in-sample (training) curve
+NL_test  <- nbr_labels(train_x, test_x,  y_tr, kmax)   # used once, after k is chosen
+
+tune <- do.call(rbind, lapply(k_grid, function(k) {
+  Pcv <- prob_k(NL_cv, k);    cvm <- summ(Pcv, pred_from_P(Pcv), y_tr)
+  Ptr <- prob_k(NL_train, k); trm <- summ(Ptr, pred_from_P(Ptr), y_tr)
+  data.frame(k = k,
+             CV_LogLoss = unname(cvm["LogLoss"]), CV_BalAcc = unname(cvm["BalAcc"]),
+             CV_MacroF1 = unname(cvm["MacroF1"]),
+             Train_LogLoss = unname(trm["LogLoss"]), Train_BalAcc = unname(trm["BalAcc"]))
+}))
+
+k_ll   <- tune$k[which.min(tune$CV_LogLoss)]   # best k by log-loss
+k_ba   <- tune$k[which.max(tune$CV_BalAcc)]    # best k by balanced accuracy
+k_star <- k_ll                                 # FINAL choice: log-loss
+```
+
+We searched odd k from 1 to `r kmax` with 10-fold CV on the training data only. Each candidate was scored with two metrics: balanced accuracy and log-loss. Log-loss is minimized at $k = `r k_ll`$ and balanced accuracy is maximized at $k = `r k_ba`$; the two metrics `r ifelse(k_ll == k_ba, "agreed", "did not agree")`. We chose the final $k^* = `r k_star`$ using **log-loss**, because it is a strictly proper scoring rule that rewards well-calibrated probabilities and is not affected by the arbitrary argmax decision rule, which matters because we compare kNN to Naive Bayes on probability quality as well as on hard classification.
+
+```{r fig.cap = "kNN classification tuning. Top: log-loss (lower is better). Bottom: macro balanced accuracy (higher is better). Red dashed line: best k chosen by CV log-loss. Blue dotted line: k with best CV balanced accuracy."}
+plot_df <- rbind(
+  data.frame(k = tune$k, Metric = "Log-loss",
+             Set = "10-fold CV", Value = tune$CV_LogLoss),
+  data.frame(k = tune$k, Metric = "Log-loss",
+             Set = "Training", Value = tune$Train_LogLoss),
+  data.frame(k = tune$k, Metric = "Balanced accuracy",
+             Set = "10-fold CV", Value = tune$CV_BalAcc),
+  data.frame(k = tune$k, Metric = "Balanced accuracy",
+             Set = "Training", Value = tune$Train_BalAcc))
+
+ggplot(plot_df, aes(x = k, y = Value, color = Set)) +
+  geom_line(linewidth = 1) +
+  geom_vline(xintercept = k_star, linetype = "dashed", color = "red") +
+  geom_vline(xintercept = k_ba, linetype = "dotted", color = "blue") +
+  facet_wrap(~ Metric, ncol = 1, scales = "free_y") +
+  scale_color_manual(values = c("10-fold CV" = "#8B2346", "Training" = "gray50")) +
+  labs(x = "k (number of neighbors)", y = NULL, color = NULL) +
+  theme_bw(base_size = 12)
+```
+
+```{r}
+top_cls <- head(tune[order(tune$CV_LogLoss), c("k", "CV_LogLoss", "CV_BalAcc", "CV_MacroF1")], 5)
+names(top_cls) <- c("k", "CV log-loss", "CV balanced acc.", "CV macro-F1")
+tbl(top_cls, paste0("Top five candidate values of k by cross-validated log-loss. Chosen optimum: k = ",
+                    k_star, "."))
+```
 
 
 ##  Naive Bayes
-```{r,echo = FALSE}
+```{r, echo = FALSE}
 H <- table(pos_scale$Position)# Establish count
 prior <- prop.table(H)# establish prior
-rbind(Count = H, Prior = round(prior, 4))# binds count and prior to one table
+pr <- rbind(Count = H, Prior = round(prior, 4))# binds count and prior to one table
+tbl(pr, "Table of Priors and Counts", rn=TRUE)
 
 ```
-A basic Count/Prior table has the catcher and outfield positions being the most populated.
-```{r,echo = FALSE}
-# Splits train/test 70/30
-set.seed(4654)
-idx <- unlist(lapply(split(1:nrow(pos_scale), pos_scale$Position),
-                     function(i) sample(i, round(0.7 * length(i)))))
-trainNB <- pos_scale[idx,]
-testNB <- pos_scale[-idx,]
-# gives categorical likelihood tables
-fitNB <- naiveBayes(Position ~ BA + HRA + BBA + SOA, data = trainNB) 
-fitNB$tables 
-```
+This table shows the catcher and outfield positions being the most populated.
+
 
 ```{r,echo = FALSE}
+fitNB <- naiveBayes(Position ~ ., data = data.frame(Position = cls_train$Position, train_x))
 
 # class prediction and its posterior
-mapNB <- predict(fitNB, newdata = testNB, type = "class") 
-postNB <- predict(fitNB, newdata = testNB, type = "raw")
+mapNB <- predict(fitNB, newdata = test_x, type = "class") 
+postNB <- predict(fitNB, newdata = test_x, type = "raw")
 
 #data frame of predictions and posteriors
 pred_dfNB <- data.frame(
   predicted = mapNB,
   posterior   = round(apply(postNB, 1, max), 4)
 )
-head(pred_dfNB, 10)
 # Prediction matrix
-tabNB <- table(predicted = predict(fitNB, newdata = testNB), actual = testNB$Position)
-tabNB
+tabNB <- table(predicted = predict(fitNB, newdata = test_x), actual = cls_test$Position)
+tbl(tabNB, "Prediction Matrix of Positions for Naive Bayes", rn=TRUE)
 ```
-I have produced the first 10 hard predictions and soft posteriors. Below that is the accompanying prediction matrix.
+
 
 ```{r,echo = FALSE}
 # Confusion matrix 
 cmNB <- confusionMatrix(tabNB)
+tbl(cmNB$table, "Confusion Matrix of Positions for Naive Bayes", rn=TRUE)
+
 
 #log loss scores
-yNB    <- testNB$Position
-p_trueNB <- postNB[cbind(1:nrow(testNB), match(as.character(yNB), colnames(postNB)))]
-loglossNB <- -mean(log(pmax(p_trueNB)))
+yNB    <- test_x$Position
+p_trueNB <- postNB[cbind(1:nrow(test_x), match(as.character(yNB), colnames(postNB)))]
+loglossNB <- -mean(log(pmax(p_trueNB, 1e-15)))
 ```
 
 
 ```{r,echo = FALSE}
 #null model
-pi_trainNB <- prop.table(table(trainNB$Position))
-maj <- names(which.max(pi_trainNB))
-loglossnullNB <- -mean(log(pi_trainNB[as.character(yNB)]))
-pred_null <- factor(rep(maj, nrow(testNB)), levels = levels(yNB))
+pi_cls_train <- prop.table(table(train_x$Position))
+maj <- names(which.max(pi_train))
+loglossnullNB <- -mean(log(pi_train[as.character(yNB)]))
+pred_null <- factor(rep(maj, nrow(test_x)), levels = levels(yNB))
 #null prediction matrix
 tab_null <- table(predicted = pred_null, actual = yNB)
 tab_null
@@ -402,9 +544,10 @@ The prediction matrix for the null model follows the earlier count and prior, sh
 
 ```{r,echo = FALSE}
 # null confusion matrix
-cm_nullNB <- confusionMatrix(table(factor(rep(maj, nrow(testNB)), levels = levels(yNB)), yNB))
+cm_nullNB <- confusionMatrix(table(factor(rep(maj, nrow(test_x)), levels = levels(yNB)), yNB))
+tbl(cm_nullNB$table, "Null Model Confusion Matrix of Positions for Naive Bayes", rn=TRUE)
+
 ```
-The Confusion matrix for the null model.
 
 ```{r, echo = FALSE}
 # prints metric scores for comparison between null and prediction
@@ -418,259 +561,18 @@ results <- data.frame(
 )
 results
 ```
-## Comparison between Naive Bayes and Null model
+comparison between Naive Bayes and Null model
+
+## Comparing KNN vs Naive Bayes Classification
 
 # 5. Discussion and Real World Implications
 
 # 6. Citations and Data Link
-The data is linked [here](https://sabr.app.box.com/s/y1prhc795jk8zvmelfd3jq7tl389y6cd). We downloaded `Fielding.csv`, `batting.csv`, and `Teams.csv`.
+
+Lahman Baseball Database – Society for American Baseball Research. (2025). Retrieved September 29, 2026, from <https://sabr.org/lahman-database/>
+
+The data is linked [here](https://sabr.app.box.com/s/y1prhc795jk8zvmelfd3jq7tl389y6cd). 
 
 # 7. Appendix
 
 ## Data cleaning
-```r
-pos     <- read.csv("Fielding.csv")
-batting <- read.csv("batting.csv")
-team    <- read.csv("Teams.csv")
-# Getting highest position played for players
-primary_pos <- pos %>%
-  group_by(playerID, yearID, POS) %>%
-  summarise(G = sum(G), .groups = "drop") %>%
-  group_by(playerID, yearID) %>%
-  slice_max(G, n = 1, with_ties = FALSE) %>%
-  select(playerID, yearID, POS)
-
-# Merge Position into Player and Year to condense data
-stats <- merge(batting, primary_pos,
-               by = c("playerID", "yearID"), all.x = TRUE)
-
-# Keeps only American and National League
-stats_clean <- stats[stats$lgID %in% c("AL", "NL"), ]
-stats_clean <- stats_clean[!is.na(stats_clean$POS), ]
-
-
-#####################################################
-####### REGRESSION !!!!!!!!!
-## Separates by team for regression prediction. 
-
-team_clean <- team[team$lgID %in% c("AL","NL"),] # Keeps only AL and NL
-team_clean$X1B <- team_clean$H - team_clean$X2B - team_clean$X3B - team_clean$HR # Creates X1B
-team_clean$HBPxBB <- team_clean$BB + team_clean$HBP # Creates HBPxBB
-
-
-# Takes only the necessary data
-team_clean <- team_clean[,c("yearID", "teamID","G", "R", "X1B", "X2B", "X3B", 
-                            "HR", "SO", "HBPxBB", "SB", "SF", "CS", "AB")] 
-
-#Divides stats by games to establish per game base
-stats <- c("R", "X1B", "X2B", "X3B", "HR", "SO", "HBPxBB", "SB", "SF")
-team_clean[stats] <- team_clean[stats] / team_clean$G
-
-team_clean <- team_clean[!is.na(team_clean$SF), ]# Removes NaN values from SF
-team_clean <- team_clean[!is.na(team_clean$HBPxBB), ]# Removes NaN values from HBPxBB
-
-# List of predictors for training
-num_vars <- c("X1B", "X2B", "X3B", "HR", "SO", "HBPxBB", "SB", "SF", "CS", "AB") 
-
-
-###################################################
-
-# CLASSIFICATION AND BAYES!!!!!!!!!!!!!
-# Keeps only At Bats > 100
-pos_data <- stats_clean[stats_clean$AB >= 100, ] 
-
-# Changes The infield positions into a common infield tab
-for(i in 1:length(pos_data$POS)){
-  if(pos_data$POS[i] == "1B" || 
-     pos_data$POS[i] == "2B" ||
-     pos_data$POS[i] == "3B" ||
-     pos_data$POS[i] == "SS" ){
-    pos_data$POS[i] = "IF"
-  }
-}
-# For easier referral
-position_names <- c(
-  "IF" = "Infield",
-  "C"  = "Catcher",
-  "OF" = "Outfield",
-  "P"  = "Pitcher"
-)
-
-#Factors Positions into levels
-pos_data$Position <- factor(position_names[pos_data$POS])
-
-#Keep only necessary data
-pos_data <- pos_data[, c("playerID", "yearID", "Position",
-                         "H", "HR", "BB", "SO", "SB", "AB")]
-
-# creates scaled pos_data for Classification comparison and naive Bayes
-pos_scale <- pos_data
-
-pos_scale$BA <- pos_data$H  / pos_data$AB
-pos_scale$HRA <- pos_data$HR / pos_data$AB
-pos_scale$BBA <- pos_data$BB / pos_data$AB
-pos_scale$SOA <- pos_data$SO / pos_data$AB
-
-# Factors Pos_Scaled
-pos_scale$Position <- factor(position_names[pos_data$Position])
-
-#Adds scaled variables into pos_scaled
-pos_scale <- pos_scale[, c("playerID", "yearID", "Position",
-                                  "BA", "HRA", "BBA", "SOA")]
- 
-```
-
-## Scale vs Unscale Distance
-```r
-#creates table for unscaled distances
-d2 <-(team_clean[1, num_vars] - team_clean[2, num_vars])^2
-round(rbind(squared_diff = unlist(d2), percent = 100*unlist(d2) / sum(d2)),2)
-
-# table for scaled distances
-z <- scale(team_clean[, num_vars])
-d2z <- (z[1,] - z[2,])^2
-round(rbind(squared_diff = d2z, percent = 100*d2z/sum(d2z)),2)
-```
-## KNN Regression
-```r
-
-#splits training/testing 70/30
-set.seed(4654)
-index <- sample(1:nrow(team_clean), round(nrow(team_clean) * 0.7))
-training_df <- scale(team_clean[index, num_vars])
-testing_df  <- scale(team_clean[-index, num_vars],
-                     center = attr(training_df, "scaled:center"),
-                     scale  = attr(training_df, "scaled:scale"))
-
-train_pred <- team_clean$R[index]
-test_pred <- team_clean$R[-index]
-
-# Cross Validation for best K
-set.seed(4654)
-folds <- sample(rep(1:10, length.out = nrow(training_df)))
-
-cv_rmse <- function(k) {
-  sq_err <- unlist(lapply(1:10, function(f) {
-    tr_x <- training_df[folds != f, ]
-    te_x <- training_df[folds == f, ]
-    tr_y <- train_pred[folds != f]
-    te_y <- train_pred[folds == f]
-    pred <- knn.reg(train = tr_x, test = te_x, y = tr_y, k = k)$pred
-    (te_y - pred)^2
-  }))
-  sqrt(mean(sq_err))
-}
-
-k_cv <- 1:80
-cv_results <- data.frame(k = k_cv, RMSE = sapply(k_cv, cv_rmse))
-k_best <- cv_results$k[which.min(cv_results$RMSE)]
-
-#Training knn for values
-train_rmse <- function(k) {
-  pred <- knn.reg(train = training_df, test = training_df, y = train_pred, k = k)$pred
-  sqrt(mean((train_pred - pred)^2))
-}
-cv_results$Train_RMSE <- sapply(cv_results$k, train_rmse)
-
-# plot showing best k and training rmse results
-ggplot(cv_results, aes(x = k)) +
-  geom_line(aes(y = RMSE, color = "10-fold CV"), linewidth = 1) +
-  geom_line(aes(y = Train_RMSE, color = "Training"), linewidth = 1) +
-  geom_point(data = cv_results[cv_results$k == k_best, ],
-             aes(y = RMSE), color = "red", size = 4) +
-  scale_color_manual(values = c("10-fold CV" = "#8B2346", "Training" = "gray50")) +
-  labs(title = paste0("Cross-validated choice:  k = ", k_best),
-       x = "k", y = "RMSE", color = NULL) +
-  theme_bw(base_size = 14)
-
-
-top_k <- head(cv_results[order(cv_results$RMSE), ], 5)
-top_k$RMSE   <- round(top_k$RMSE, 3)
-rownames(top_k) <- NULL
-top_k # plot showing top 5 ks and their RMSE
-
-
-final_pred <- knn.reg(train = training_df, test = testing_df,
-                      y = train_pred, k = k_best)$pred
-
-rmse      <- function(a, b) sqrt(mean((a - b)^2))
-mae       <- function(a, b) mean(abs(a - b))
-r_squared <- function(a, b) 1 - sum((a - b)^2) / sum((a - mean(a))^2)
-
-null_prediction <- rep(mean(train_pred), length(test_pred))
-
-results <- data.frame(
-  Model = c("Null (training mean)", paste0("KNN (k = ", k_best, ")")),
-  RMSE  = c(rmse(test_pred, null_prediction), rmse(test_pred, final_pred)),
-  MAE   = c(mae(test_pred, null_prediction),  mae(test_pred, final_pred)),
-  R2    = c(r_squared(test_pred, null_prediction), r_squared(test_pred, final_pred))
-)
-results[, -1] <- round(results[, -1], 3)
-results
-```
-## KNN Classification
-
-## Naive Bayes
-```r
-H <- table(pos_scale$Position)# Establish count
-prior <- prop.table(H)# establish prior
-rbind(Count = H, Prior = round(prior, 4))# binds count and prior to one table
-
-# Splits train/test 70/30
-set.seed(4654)
-idx <- unlist(lapply(split(1:nrow(pos_scale), pos_scale$Position),
-                     function(i) sample(i, round(0.7 * length(i)))))
-trainNB <- pos_scale[idx,]
-testNB <- pos_scale[-idx,]
-# gives categorical likelihood tables
-fitNB <- naiveBayes(Position ~ BA + HRA + BBA + SOA, data = trainNB) 
-fitNB$tables 
-
-# class prediction and its posterior
-mapNB <- predict(fitNB, newdata = testNB, type = "class") 
-postNB <- predict(fitNB, newdata = testNB, type = "raw")
-
-#data frame of predictions and posteriors
-pred_dfNB <- data.frame(
-  predicted = mapNB,
-  posterior   = round(apply(postNB, 1, max), 4)
-)
-head(pred_dfNB, 10)
-# Prediction matrix
-tabNB <- table(predicted = predict(fitNB, newdata = testNB), actual = testNB$Position)
-tabNB
-
-# Confusion matrix 
-cmNB <- confusionMatrix(tabNB)
-
-#log loss scores
-yNB    <- testNB$Position
-p_trueNB <- postNB[cbind(1:nrow(testNB), match(as.character(yNB), colnames(postNB)))]
-loglossNB <- -mean(log(pmax(p_trueNB)))
-
-#null model
-pi_trainNB <- prop.table(table(trainNB$Position))
-maj <- names(which.max(pi_trainNB))
-loglossnullNB <- -mean(log(pi_trainNB[as.character(yNB)]))
-pred_null <- factor(rep(maj, nrow(testNB)), levels = levels(yNB))
-#null prediction matrix
-tab_null <- table(predicted = pred_null, actual = yNB)
-tab_null
-
-# null confusion matrix
-cm_nullNB <- confusionMatrix(table(factor(rep(maj, nrow(testNB)), levels = levels(yNB)), yNB))
-
-# prints metric scores for comparison between null and prediction
-results <- data.frame(
-  Model    = c("Naive Bayes", "No-skill"),
-  Accuracy = c(cmNB$overall["Accuracy"], cm_nullNB$overall["Accuracy"]),
-  BalAcc   = c(mean(cmNB$byClass[, "Balanced Accuracy"]),
-               mean(cm_nullNB$byClass[, "Balanced Accuracy"])),       # baseline 0.5
-  Kappa    = c(cmNB$overall["Kappa"], cm_nullNB$overall["Kappa"]),      # baseline 0
-  LogLoss  = c(loglossNB, loglossnullNB)
-)
-results
-
-```
-
-## Comparison
