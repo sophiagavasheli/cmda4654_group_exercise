@@ -46,7 +46,7 @@ library(FNN)
 
 # Although you can call functions from a library using the following notation
 #  without loading the entire library.
-knitr::opts_chunk$set(echo = FALSE,
+knitr::opts_chunk$set(echo = TRUE,
                       comment = NA, # Recommended
                       fig.path = "./figures/",  # Store all figures here in relative path (make the folder first)
                       fig.align = "center",
@@ -71,20 +71,22 @@ We are Sophia Gavasheli and Jacob Carlson, and we our group 17. Our chosen domai
 # 2. Executive Summary and Research Questions 
 
 ## KNN Regression
-We are using a KNN regression model to predict the runs a team scored in any given game. Runs will be predicted by the following variables, expressed per game.
+We are using a KNN regression model to predict the runs a team scored in any given game. Runs will be predicted by the following variables.
 
-| Variable   | Description                              |
+| Variable   | Description                                           |
 |------------|-------------------------------------------------------|
-| `X1B`      | Singles (H - 2B - 3B - HR)                            |
-| `X2B`      | Doubles                                               |
-| `X3B`      | Triples                                               |
+| `AB`       | At Bats                                               |
+| `1b`       | Singles                                               |
+| `2B`       | Doubles                                               |
+| `3B`       | Triples                                               |
 | `HR`       | Home Runs                                             |
-| `SO`       | Strikeouts                                            |
-| `HBPxBB`   | Walks plus Hit by Pitch (BB + HBP)                    |
 | `SB`       | Stolen Bases                                          |
 | `CS`       | Caught Stealing                                       |
+| `BB`       | Base on Balls                                         |
+| `SO`       | Strikeouts                                            |
+| `HBP`      | Hit by Pitch                                          |
+| `SH`       | Sacrifice Hits                                        |
 | `SF`       | Sacrifice Flies                                       |
-| `AB`       | At Bats                                               |
 
 The data frame that these variables were taken from was not used in part A of our exercise, but is still part of the larger data set we pulled from. Using runs as a metric was an explored idea in part A, but was not used in our final report, so we decided to further explore it here, since it looked like it could have a relationship with the other variables like home runs and at bats.
 
@@ -102,7 +104,6 @@ We standardized this data to ensure KNN and Naive Bayes were using the same inpu
 
 In part A, we used the data frames `fieldingpost.csv` and `batting.csv`. Fielding-post only included post season stats(playoffs), and wasn't big enough for our models, so we switched to `fielding.csv`, which contains the entire seasons. We also used `Teams.csv` for our KNN regression, as it contained all of the data used in our model with minimal cleaning and merging between data sets.
 
-The data is linked [here](https://sabr.app.box.com/s/y1prhc795jk8zvmelfd3jq7tl389y6cd). We downloaded `Fielding.csv`, `batting.csv`, and `Teams.csv`.
 
 ```{r,echo = FALSE}
 pos     <- read.csv("Fielding.csv")
@@ -176,6 +177,7 @@ pos_data$Position <- factor(position_names[pos_data$POS])
 pos_data <- pos_data[, c("playerID", "yearID", "Position",
                          "H", "HR", "BB", "SO", "SB", "AB")]
 
+
 # creates scaled pos_data for Classification comparison and naive Bayes
 pos_scale <- pos_data
 
@@ -187,6 +189,8 @@ pos_scale$SOA <- pos_data$SO / pos_data$AB
 #Adds scaled variables into pos_scaled
 pos_scale <- pos_scale[, c("playerID", "yearID", "Position",
                                   "BA", "HRA", "BBA", "SOA")]
+# List of Predictors for pos_scaled
+feats <- c("BA", "HRA", "BBA", "SOA") 
 ```
 \clearpage
 
@@ -219,7 +223,7 @@ z   <- scale(team_clean[, num_vars])
 d2z <- (z[1, ] - z[2, ])^2
 demo <- rbind("Raw (share of squared distance, pct)"          = 100 * d2  / sum(d2),
               "Z-scored (share of squared distance, pct)"     = 100 * d2z / sum(d2z))
-tbl(demo, "Share of squared Euclidean distance contributed by each predictor (first two team-seasons).",
+tbl(demo, "Share of squared Euclidean distance contributed by each predictor (first two games).",
     digits = 1, rn = TRUE)
 ```
 
@@ -231,7 +235,21 @@ We wanted to limit classification responses, so we combined the infield position
 
 In baseball, different positions get different amounts of playtime. Furthermore, because we combined four possible positions into one, our data was even more skewed, and in the case of KNN classification, our distances would be poorly weighted. We therefore decided to scale all of our predictors based on At bats, providing the predictors described above(BA, HRA, BBA, SOA). While the standardizing would have less affect on our Naive Bayes model, since our goal is to compare it with our classification, we chose to scale the predictors before running either model.
 
+```{r, echo = FALSE}
+# table format
+tbl <- function(x, cap, digits = 3, rn = FALSE, ...) {
+  knitr::kable(x, booktabs = TRUE, caption = cap, digits = digits,
+               position = "H", row.names = rn, ...)
+}
 
+d2  <- unlist((pos_scale[1, feats] - pos_scale[2, feats])^2)
+z   <- scale(pos_scale[, feats])
+d2z <- (z[1, ] - z[2, ])^2
+demo <- rbind("Raw (share of squared distance, pct)"          = 100 * d2  / sum(d2),
+              "Z-scored (share of squared distance, pct)"     = 100 * d2z / sum(d2z))
+tbl(demo, "Share of squared Euclidean distance contributed by each predictor (first two team-seasons).",
+    digits = 1, rn = TRUE)
+```
 \clearpage
 
 # 4. Analysis, Tuning & Results
@@ -251,7 +269,7 @@ training_df <- scale(train_raw, center = mu_reg, scale = sd_reg)
 testing_df  <- scale(test_raw,  center = mu_reg, scale = sd_reg)
 
 # classification split (knn and nb)
-feats <- c("BA", "HRA", "BBA", "SOA")
+
 set.seed(4654)
 idx_cls <- unlist(lapply(split(seq_len(nrow(pos_scale)), pos_scale$Position),
                          function(i) sample(i, round(0.7 * length(i)))))
@@ -267,7 +285,10 @@ lv   <- levels(pos_scale$Position)
 K    <- length(lv)
 y_tr <- as.integer(cls_train$Position)
 y_te <- as.integer(cls_test$Position)
-yNB  <- cls_test$Position
+
+# 
+pi_train     <- prop.table(table(cls_train$Position))[lv]
+null_entropy <- -sum(pi_train * log(pi_train))
 ```
 
 ##  KNN Regression
@@ -276,7 +297,7 @@ yNB  <- cls_test$Position
 
 We searched $k = 1, \ldots, 80$ using 10-fold CV on the training data only.
 
-```{r fig.cap = "kNN regression tuning: cross-validated and training RMSE versus k. The red point marks the CV-optimal k. "}
+```{r fig.cap = "kNN regression tuning: cross-validated and training RMSE versus k. The red point marks the CV-optimal k. ",echo = FALSE}
 set.seed(4654)
 folds <- sample(rep(1:10, length.out = nrow(train_raw)))
 
@@ -292,7 +313,7 @@ fold_data <- lapply(1:10, function(f) {
        va_y = train_y[folds == f])
 })
 
-cv_rmse <- function(k) {
+cv_rmse <- function(k) {test_x
   sq_err <- unlist(lapply(fold_data, function(d) {
     pred <- knn.reg(train = d$tr_x, test = d$va_x, y = d$tr_y, k = k)$pred
     (d$va_y - pred)^2
@@ -322,9 +343,9 @@ ggplot(cv_results, aes(x = k)) +
   theme_bw(base_size = 12)
 ```
 
-The CV-optimal value is $k = `r k_best`$. Very small $k$ gives a near-zero training RMSE (each point is nearly its own neighbor) but a worse CV RMSE, which is overfitting. As $k$ becomes large the two curves rise together, which is underfitting.
+The CV-optimal value is $k^* = `r k_best`$. Very small $k$ gives a near-zero training RMSE (each point is nearly its own neighbor) but a worse CV RMSE, which is overfitting. As $k$ becomes large the two curves rise together, which is underfitting.
 
-```{r}
+```{r,echo = FALSE}
 top_k <- head(cv_results[order(cv_results$RMSE), c("k", "RMSE", "Train_RMSE")], 5)
 names(top_k) <- c("k", "CV RMSE", "Training RMSE")
 tbl(top_k, paste0("Top five candidate values of k by cross-validated RMSE. The chosen optimum is k = ",
@@ -361,9 +382,10 @@ tbl(results, "kNN regression on the held-out test set versus the null (mean-only
 
 **R Squared:** As expected, our null model takes 0% of the predictors into account for its predictions. However, our k = 9 model takes 82%, signifying that the 10 predictors are a strong representation of the runs scored.
 
+\clearpage
 
 ##  KNN Classification
-```{r}
+```{r, echo = FALSE}
 # helpers
 onehot  <- function(y_int) diag(K)[y_int, , drop = FALSE]
 logloss <- function(P, y_int) -mean(log(pmax(P[cbind(seq_along(y_int), y_int)], 1e-15)))
@@ -401,7 +423,7 @@ summ <- function(P, pred_int, y_int) {
 }
 ```
 
-```{r}
+```{r,echo = FALSE}
 k_grid <- seq(1, 51, by = 2)
 kmax   <- max(k_grid)
 
@@ -451,7 +473,7 @@ k_star <- k_ll                                 # FINAL choice: log-loss
 
 We searched odd k from 1 to `r kmax` with 10-fold CV on the training data only. Each candidate was scored with two metrics: balanced accuracy and log-loss. Log-loss is minimized at $k = `r k_ll`$ and balanced accuracy is maximized at $k = `r k_ba`$; the two metrics `r ifelse(k_ll == k_ba, "agreed", "did not agree")`. We chose the final $k^* = `r k_star`$ using **log-loss**, because it is a strictly proper scoring rule that rewards well-calibrated probabilities and is not affected by the arbitrary argmax decision rule, which matters because we compare kNN to Naive Bayes on probability quality as well as on hard classification.
 
-```{r fig.cap = "kNN classification tuning. Top: log-loss (lower is better). Bottom: macro balanced accuracy (higher is better). Red dashed line: best k chosen by CV log-loss. Blue dotted line: k with best CV balanced accuracy."}
+```{r fig.cap = "kNN classification tuning. Top: log-loss (lower is better). Bottom: macro balanced accuracy (higher is better). Red dashed line: best k chosen by CV log-loss. Blue dotted line: k with best CV balanced accuracy.",echo = FALSE}
 plot_df <- rbind(
   data.frame(k = tune$k, Metric = "Log-loss",
              Set = "10-fold CV", Value = tune$CV_LogLoss),
@@ -472,173 +494,91 @@ ggplot(plot_df, aes(x = k, y = Value, color = Set)) +
   theme_bw(base_size = 12)
 ```
 
-```{r}
+```{r, echo = FALSE}
 top_cls <- head(tune[order(tune$CV_LogLoss), c("k", "CV_LogLoss", "CV_BalAcc", "CV_MacroF1")], 5)
 names(top_cls) <- c("k", "CV log-loss", "CV balanced acc.", "CV macro-F1")
 tbl(top_cls, paste0("Top five candidate values of k by cross-validated log-loss. Chosen optimum: k = ",
                     k_star, "."))
 ```
 
-```{r}
-P_knn   <- prob_k(NL_test, k_star)                                   # probabilities
-mapKNN  <- factor(lv[max.col(P_knn, ties.method = "first")], levels = lv)  # hard prediction
-tabKNN  <- table(predicted = mapKNN, actual = cls_test$Position )
-cmKNN   <- confusionMatrix(tabKNN)
-tbl(cmKNN$table, "Confusion Matrix of Positions for KNN Classification", rn=TRUE)
+\clearpage
+
+##  Naive Bayes
+```{r, echo = FALSE}
+H <- table(pos_scale$Position)# Establish count
+prior <- prop.table(H)# establish prior
+pr <- rbind(Count = H, Prior = round(prior, 4))# binds count and prior to one table
+tbl(pr, "Table of Priors and Counts", rn=TRUE)
+
 ```
+This table shows the catcher and outfield positions being the most populated.
 
-## Naive Bayes
-Naive Bayes models each predictor as Gaussian within each class and assumes the predictors are independent given position.
 
-```{r nb-prior}
-pi_cls_train <- prop.table(table(cls_train$Position))[lv]
-maj          <- names(which.max(pi_cls_train))        # majority class
-pr <- data.frame(Position = lv,
-                 Count = as.integer(table(cls_train$Position)[lv]),
-                 Prior = as.numeric(pi_cls_train))
-tbl(pr, "Training class counts and priors.")
-```
-
-desc
-```{r nb-fit}
+```{r,echo = FALSE}
 fitNB <- naiveBayes(Position ~ ., data = data.frame(Position = cls_train$Position, train_x))
 
-# class prediction and its posterior (test features are z-scored with TRAINING stats)
-mapNB  <- predict(fitNB, newdata = test_x, type = "class")
-postNB <- predict(fitNB, newdata = test_x, type = "raw")[, lv]
+# class prediction and its posterior
+mapNB <- predict(fitNB, newdata = test_x, type = "class") 
+postNB <- predict(fitNB, newdata = test_x, type = "raw")
 
+#data frame of predictions and posteriors
+pred_dfNB <- data.frame(
+  predicted = mapNB,
+  posterior   = round(apply(postNB, 1, max), 4)
+)
 # Prediction matrix
-tabNB <- table(predicted = mapNB, actual = yNB)
-tbl(tabNB, "Prediction Matrix of Positions for Naive Bayes (rows = predicted, columns = actual)", digits = 0, rn = TRUE)
+tabNB <- table(predicted = predict(fitNB, newdata = test_x), actual = cls_test$Position)
+tbl(tabNB, "Prediction Matrix of Positions for Naive Bayes", rn=TRUE)
+```
+
+
+```{r,echo = FALSE}
+# Confusion matrix 
 cmNB <- confusionMatrix(tabNB)
-```
+tbl(cmNB$table, "Confusion Matrix of Positions for Naive Bayes", rn=TRUE)
 
-desc
 
-```{r nb-examples}
-ex <- data.frame(Actual = as.character(cls_test$Position[1:10]),
-                 Predicted = as.character(mapNB[1:10]),
-                 round(postNB[1:10, ], 3))
-tbl(ex, "First ten test observations: actual position, Naive Bayes prediction, and posterior probabilities.")
-```
-
-desc
-
-```{r null-model}
-# No-skill baseline: training class proportions for every test observation
-P_null   <- matrix(as.numeric(pi_cls_train), nrow = nrow(test_x), ncol = K,
-                   byrow = TRUE, dimnames = list(NULL, lv))
-tab_null <- table(predicted = factor(rep(maj, nrow(test_x)), levels = lv), actual = yNB)
-cm_null  <- confusionMatrix(tab_null)
-tbl(cm_null$table, "No-skill (null model) confusion matrix of positions (rows = predicted, columns = actual).", digits = 0, rn = TRUE)
-
-null_entropy <- -sum(pi_cls_train * log(pi_cls_train))   # entropy of the training priors
-```
-
-desc
-
-\clearpage
-
-## Comparing KNN vs Naive Bayes Classification vs Null Model
-
-```{r compare-table}
-res <- rbind(nb   = summ(postNB, pred_from_P(postNB), y_te),
-             knn  = summ(P_knn,  pred_from_P(P_knn),  y_te),
-             null = summ(P_null, pred_from_P(P_null), y_te))
-
-results <- data.frame(Model = c("Naive Bayes", paste0("kNN (k = ", k_star, ")"), "No-skill baseline"),
-                      res, row.names = NULL)
-results$LL_Improve <- 1 - results$LogLoss / results$LogLoss[3]   # relative to null log-loss
-names(results) <- c("Model", "Accuracy", "Bal. Acc.", "Macro-F1", "Kappa",
-                    "Log-loss", "Brier", "LL improv. vs null")
-tbl(results, "Metric comparison of KNN, Naive Bayes Classification and the null model")
-```
-
-**Why these metrics.** Positions are imbalanced, so accuracy is always read against the no-information rate. *Balanced accuracy*, *macro-F1* and *Cohen's kappa* are threshold-dependent but imbalance-aware (they average per class, so a large class cannot hide a failure on a small one). The *Brier score* is a threshold-free, strictly proper scoring rule, and *log-loss* is reported against the null entropy. 
-
-```{r roc}
-roc_curve <- function(score, label) {
-  o  <- order(score, decreasing = TRUE)
-  s  <- score[o]; l <- label[o]
-  tp <- cumsum(l); fp <- cumsum(!l)
-  keep <- c(diff(s) != 0, TRUE)          # one point per distinct threshold (handles kNN ties)
-  data.frame(FPR = c(0, fp[keep] / sum(!l)),
-             TPR = c(0, tp[keep] / sum(l)))
-}
-auc_trap <- function(d) sum(diff(d$FPR) * (head(d$TPR, -1) + tail(d$TPR, -1)) / 2)
-
-nb_name  <- "Naive Bayes"
-knn_name <- paste0("kNN (k = ", k_star, ")")
-models   <- setNames(list(postNB[, lv], P_knn[, lv]), c(nb_name, knn_name))
-
-grid     <- seq(0, 1, length.out = 201)   # common FPR grid for the macro-average curve
-roc_list <- list(); auc_list <- list()
-for (m in names(models)) {
-  P    <- models[[m]]
-  tprs <- matrix(NA_real_, length(grid), K)
-  for (j in seq_len(K)) {
-    d <- roc_curve(P[, j], y_te == j)
-    tprs[, j] <- approx(d$FPR, d$TPR, xout = grid, ties = max)$y
-    roc_list[[length(roc_list) + 1]] <- data.frame(Model = m, Panel = lv[j], d)
-    auc_list[[length(auc_list) + 1]] <- data.frame(Model = m, Class = lv[j], AUC = auc_trap(d))
-  }
-  # macro-average ROC curve: average the K one-vs-rest curves at each FPR
-  roc_list[[length(roc_list) + 1]] <- data.frame(Model = m, Panel = "Macro-average",
-                                                 FPR = c(0, grid), TPR = c(0, rowMeans(tprs)))
-}
-roc_df <- do.call(rbind, roc_list)
-auc_df <- do.call(rbind, auc_list)
-
-# AUC table: per class + macro-average (unweighted mean of the 4 class AUCs)
-auc_wide <- reshape(auc_df, idvar = "Class", timevar = "Model", direction = "wide")
-names(auc_wide) <- sub("AUC\\.", "", names(auc_wide))
-auc_wide <- rbind(auc_wide, data.frame(Class = "Macro-average",
-                                       t(sapply(c(nb_name, knn_name),
-                                                function(m) mean(auc_df$AUC[auc_df$Model == m]))),
-                                       check.names = FALSE))
-names(auc_wide) <- c("Class", nb_name, knn_name)
-auc_macro_nb  <- auc_wide[auc_wide$Class == "Macro-average", nb_name]
-auc_macro_knn <- auc_wide[auc_wide$Class == "Macro-average", knn_name]
-
-# Facet labels
-panel_lab <- sapply(auc_wide$Class, function(cl)
-  paste0(cl))
-roc_df$Panel <- factor(roc_df$Panel, levels = auc_wide$Class, labels = panel_lab)
-```
-
-```{r roc-plot, fig.height = 6, fig.cap = "One-versus-rest ROC curves on the test set for each position, and the macro-average (last panel). Each panel's title gives the AUC for Naive Bayes (NB) and kNN. The dashed diagonal is the no-skill classifier (AUC = 0.5)."}
-ggplot(roc_df, aes(x = FPR, y = TPR, color = Model, linetype = Model)) +
-  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "gray50") +
-  geom_line(linewidth = 0.9) +
-  facet_wrap(~ Panel, ncol = 3) +
-  scale_color_manual(values = setNames(c("#8B2346", "#2C7BB6"), c(nb_name, knn_name))) +
-  scale_linetype_manual(values = setNames(c("solid", "longdash"), c(nb_name, knn_name))) +
-  coord_equal() +
-  labs(x = "False positive rate (1 - specificity)", y = "True positive rate (sensitivity)") +
-  theme_bw(base_size = 11) +
-  theme(legend.position = "bottom", strip.text = element_text(size = 9))
-```
-
-```{r roc-auc-table}
-tbl(auc_wide, "Comparison of AUC values")
-```
-
-```{r compare-conf, fig.height = 3.5, fig.cap = "Probability assigned to the predicted class, for correct versus wrong test predictions."}
-conf_df <- rbind(
-  data.frame(Model = "Naive Bayes", conf = apply(postNB, 1, max),
-             Outcome = ifelse(mapNB == yNB, "Correct", "Wrong")),
-  data.frame(Model = paste0("kNN (k = ", k_star, ")"), conf = apply(P_knn, 1, max),
-             Outcome = ifelse(mapKNN == yNB, "Correct", "Wrong")))
-ggplot(conf_df, aes(x = Outcome, y = conf, fill = Outcome)) +
-  geom_boxplot(alpha = 0.7) +
-  facet_wrap(~ Model) +
-  scale_fill_manual(values = c("Correct" = "#4C9F70", "Wrong" = "#C0504D")) +
-  labs(x = NULL, y = "Probability assigned to predicted class") +
-  theme_bw(base_size = 12) + theme(legend.position = "none")
+#log loss scores
+yNB    <- lv[y_te]
+p_trueNB <- postNB[cbind(1:nrow(test_x), match(as.character(yNB), colnames(postNB)))]
+loglossNB <- -mean(log(pmax(p_trueNB, 1e-15)))
 ```
 
 
-\clearpage
+```{r,echo = FALSE}
+#null model
+pi_cls_train <- prop.table(table(factor(lv[y_tr], levels = lv)))
+maj <- names(which.max(pi_train))
+loglossnullNB <- -mean(log(pi_cls_train[as.character(yNB)]))
+pred_null <- factor(rep(maj, nrow(test_x)), levels = lv)
+#null prediction matrix
+tab_null <- table(predicted = pred_null, actual = factor(yNB, levels = lv))
+
+```
+The prediction matrix for the null model follows the earlier count and prior, showing that Infield was the most populated position in the data set.
+
+```{r,echo = FALSE}
+# null confusion matrix
+cm_nullNB <- confusionMatrix(tab_null)
+tbl(cm_nullNB$table, "Null Model Confusion Matrix of Positions for Naive Bayes", rn=TRUE)
+
+```
+
+```{r, echo = FALSE}
+# prints metric scores for comparison between null and prediction
+results <- data.frame(
+  Model    = c("Naive Bayes", "No-skill"),
+  Accuracy = c(cmNB$overall["Accuracy"], cm_nullNB$overall["Accuracy"]),
+  BalAcc   = c(mean(cmNB$byClass[, "Balanced Accuracy"]),
+               mean(cm_nullNB$byClass[, "Balanced Accuracy"])),       # baseline 0.5
+  Kappa    = c(cmNB$overall["Kappa"], cm_nullNB$overall["Kappa"]),      # baseline 0
+  LogLoss  = c(loglossNB, loglossnullNB)
+)
+results
+```
+comparison between Naive Bayes and Null model
+
+## Comparing KNN vs Naive Bayes Classification
 
 # 5. Discussion and Real World Implications
 
