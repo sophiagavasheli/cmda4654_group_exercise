@@ -81,7 +81,7 @@ position_names <- c(
   "SS" = "Shortstop"
 )
 
-by_team_pos <- aggregate(cbind(AB, H, HR, BB, SO, BA) ~ teamID + POS, data = stats_clean, FUN = sum)  
+by_team_pos <- aggregate(cbind(AB, H, HR, BB, SO, BA, R) ~ teamID + POS, data = stats_clean, FUN = sum)  
 by_team_pos$Position <- position_names[by_team_pos$POS]
 
 # loading in code from part B
@@ -90,34 +90,53 @@ source("Group17_Exercise1B.R")
 
 ## Introduction & Research Questions
 
+Our analysis used historical Major League Baseball data from the Lahman Baseball Database
 
+- **Scope:** MLB teams and players in the American League (AL) and National League (NL)
+
+- **Regression RQ:** Predict runs scored by a team by key variables such as at-bats, runs, hits, home runs, stolen bases, walks, and strikeouts, batting average
+
+  - Around 1,500 observations
+
+- **Classification RQ:** Predict a player's position based on batting average, home run average, base on balls average, and strikeout average
+
+  - Around 40,300 observations
 
 ## Exploratory Data Analysis (EDA)
 
-- Bullet 1
-- Bullet 2
-- Bullet 3
+**Data Cleaning**
 
+- Derived batting average (BA) = Hits / At-Bats
+- Player statistics were aggregated by team and year
+- Batting statistics were summarized across player positions
+- Positions combined into four categories: catcher, infield, outfield, and pitcher
 
-## Hits vs Home Runs
+**Initial Patterns**
 
-```{r hits_hr, echo=FALSE, fig.width=5, fig.height=3}
-ggplot(by_team, aes(x = H, y = HR)) +
+- Hits and home runs show a strong positive relationship
+- Runs have a relationship with offensive statistics
+- Offensive production varies substantially by fielding position
+
+## Runs vs At Bats Aggregated by Team
+
+```{r, echo=FALSE, fig.width=5, fig.height=3}
+ggplot(by_team, aes(x = AB, y = R)) +
   geom_point(col = "steelblue") +
   labs(
-    x = "Hits",
-    y = "Home Runs"
+    x = "At Bats",
+    y = "Runs"
   ) +
   theme_minimal()
 ```
 
-## Hits Across Teams by Position
-```{r hits_pos, echo=FALSE, fig.width=5, fig.height=3}
-ggplot(by_team_pos, aes(x = Position, y = H)) +
+## Home Runs by Position Aggregated by Team
+
+```{r, echo=FALSE, fig.width=5, fig.height=3}
+ggplot(by_team_pos, aes(x = Position, y = HR)) +
   geom_boxplot(col = "steelblue") +
   labs(
     x = "Position",
-    y = "Hits"
+    y = "Home Runs"
   ) +
   theme_minimal() +
   theme(
@@ -128,39 +147,75 @@ ggplot(by_team_pos, aes(x = Position, y = H)) +
   )
 ```
 
-
-
 ## Data Science Methods & Techniques
 
+**kNN Regression**
 
+- Trained on 70% training data scaled with z-scoring
+- Optimal $k$ evaluated from $k = 1, \ldots, 51$ with cross-validated RMSE which is more sensitive to large errors
+- Model performance evaluated on 30% test data with RMSE, MAE, and $R^2$
+- Useful here because baseball statistics may have nonlinear relationships
+
+**kNN and Naive Bayes Classification**
+
+- Predictors scaled based on at bats
+- Multi-class targets: used argmax rule to predict class with largest probability
+- Optimal $k$ evaluated with cross-validated balanced accuracy and multi-class log loss 
+- Model performance evaluated on 30% test data with
+  - Log-Loss: penalizes overconfident wrong predictions
+  - Brier Score: threshold-free measure of calibration
+  - Balanced Accuracy: balances sensitivity and specificity (macro-averaged)
+  - Macro-F1: summarizes precision and recall (macro-averaged)
 
 ## Results & Key Findings
 
+**Regression**
+
+- Optimal $k$ value was $k^* = 9$
+- Model performed better than no-skill model (lower RMSE/MAE, higher $R^2$)
+- The model captures about 82% of the variation in runs per game
+  - Offensive stats significantly explain runs scored per game
+
 ```{r, echo=FALSE}
-final_comp <- data.frame(
-  Metric  = c("Log-Loss", "Brier Score", "Balanced Accuracy (Macro)", "Macro-F1"),
-  NoSkill = round(null_base[c("LogLoss", "Brier", "BalAcc", "MacroF1")], 4),
-  kNN     = round(test_metrics[c("LogLoss", "Brier", "BalAcc", "MacroF1")], 4),
-  NB      = round(nb_metrics[c("LogLoss", "Brier", "BalAcc", "MacroF1")], 4)
-)
-names(final_comp) <- c("Metric", "No-Skill", paste0("kNN (k* = ", k_star, ")"), "Naive Bayes")
+tbl(results, "kNN regression on the held-out test set versus the null (mean-only) model.")
+```
+
+## Results & Key Findings (con't)
+
+**Classification**
+
+- Optimal $k$ valued was chosen based on CV log-loss, $k^* = 51$
+- Both kNN and Naive Bayes outperform the no-skill baseline
+  - kNN produces slightly better probabilistic predictions (lower Log-Loss and Brier Score)
+  - Naive Bayes has slightly higher Balanced Accuracy and Macro-F1 (stronger overall class discrimination)
+- Which model is best? kNN performs well for probability quality, while Naive Bayes performs well for balanced classification performance.
+- Can batting statistics predict player position?
+  - Both models perform better than no-skill baseline, so yes.
+
+```{r, echo=FALSE}
 tbl(final_comp, "Test-set comparison of the no-skill baseline, kNN, and Naive Bayes.")
 ```
 
 ## Calibration Plot
+
 ```{r, echo=FALSE, fig.width=5, fig.height=3}
 ggplot(calib, aes(x = mean_p, y = frac_obs, color = Model)) +
   geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "grey40") +
   geom_line(linewidth = 1) +
   geom_point(aes(size = n)) +
-  scale_color_manual(values = c("steelblue", "lightcoral")) +
+  scale_color_manual(values = c("steelblue", "#C41E3A")) +
   scale_size_continuous(range = c(1.5, 5), name = "Predictions in bin") +
   coord_equal(xlim = c(0, 1), ylim = c(0, 1)) +
-  labs(x = "Mean predicted probability",
-       y = "Observed fraction of true class") +
+  labs(x = "Mean Predicted Probability",
+       y = "Observed Fraction of True Class") +
   theme_minimal(base_size = 12) +
   theme(legend.position = "right", panel.grid.minor = element_blank())
 ```
 
+
 ## Impact & Discussion
 
+- The analysis demonstrates that relatively simple machine-learning methods can extract meaningful information from baseball statistics
+  - Runs scored per game can be predicted from offensive stats
+  - Player positions can be predicted from player performance
+- The results also demonstrate why multiple evaluation metrics are necessary: kNN performs better on probabilistic metrics, while Naive Bayes performs slightly better on balanced classification metrics.
