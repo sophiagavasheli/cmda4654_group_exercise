@@ -724,6 +724,18 @@ In the high probability range (greater than 0.5), the kNN model falls below the 
 \clearpage
 
 # 5. Discussion and Real World Implications
+### Accuracy and log-loss
+Both our kNN and Naive Bayes model had better balanced accuracy and log-log loss than our null prediction. A comparison to note is that while Naive Bayes had a slightly higher balanced accuracy than kNN, it also contain a slightly higher and worse log-loss score. This is explained by the nature of the two models in comparison to our data. Naive Bayes assumes independence no matter what, which also increases the confidence of its predictions in comparison to kNN. This is an issue mainly because our data is highly correlated. However, in contrast, the independence assumption prevents other less common positions such as pitcher from receiving influenced predictions, improving the accuracy.
+
+### Generative vs. Non-Parametric Trade-Offs
+As mentioned earlier, offensive stats in baseball are highly correlated. One of the outcomes are going to happen in any and every at bat. This fact caused the Naive Bayes's independence assumption to make overconfident predictions, making those that fail receive harsher penalties on our probability scores like log-loss and Briers. In terms of accuracy, however, the independence assumption did not have any negative effect. When comparing the two models, their metrics are still close enough that a different split could have effected switched these values.
+
+### kNN Neighborhood Size
+In both our classification and Regression we can see the overfitting at the small k = 1. As we approach our chosen k, see a sharp decline in our RMSE and log-loss, along with an incline in our balanced accuracy. However, as we go past our k and begin underfitting, we start seeing these values going in the opposite direction, and eventually going past the null prediction's scores.
+
+### Real-World decision
+In the context of the sports domain, a false negative can be more dangerous. One example would be scouting. A player in a needed position (Catcher) is flagged a under preforming, which can cause a scout to overlook said player. In this situation, both false-positives and false-negatives can be easily checked, but still have some importance. Practitioners will want to look at sensitivity over specificity in this case, as you want to lower false negatives. This also means we want our threshold to be lower, increasing the false positives w get while lowering false negatives.
+ 
 
 
 \clearpage
