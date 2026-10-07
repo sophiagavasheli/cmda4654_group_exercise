@@ -1,0 +1,166 @@
+---
+title: "kNN Regression and kNN and Naive Bayes Classification on Baseball Data"
+author: "Sophia Gavasheli and Jacob Carlson"
+date: "October 8, 2026"
+fontsize: 9pt
+classoption: "aspectratio=169"
+
+output: 
+  beamer_presentation: 
+    fonttheme: professionalfonts
+    highlight: kate
+    theme: Rochester
+
+header-includes:
+  - \definecolor{Green}{HTML}{1B4332}
+  - \definecolor{LightGreen}{HTML}{40916C}
+  - \definecolor{Cream}{HTML}{F7F3E9}
+  - \definecolor{Red}{HTML}{C41E3A}
+
+  - \usecolortheme[named=Green]{structure}
+
+  - \setbeamercolor{block title}{fg=white,bg=Green}
+  - \setbeamercolor{block body}{fg=black,bg=Cream}
+
+  - \setbeamercolor{alerted text}{fg=Red}
+
+  - \setbeamertemplate{navigation symbols}{}
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(e1071)
+library(caret)
+library(FNN)
+library(here)
+knitr::opts_chunk$set(echo = FALSE)
+
+def.chunk.hook  <- knitr::knit_hooks$get("chunk")
+knitr::knit_hooks$set(chunk = function(x, options) {
+  x <- def.chunk.hook(x, options)
+  paste0("\n \\", "footnotesize","\n\n", x, "\n\n \\normalsize")
+})
+
+knitr::opts_chunk$set(comment = "") # removes ##
+
+setwd(here()) # sets path to root of RProject
+
+# Part 1A cleaning code
+pos <- read.csv("FieldingPost.csv")
+batting <- read.csv("batting.csv")
+
+stats <- merge(batting, pos[, c("playerID", "POS")],
+               by = "playerID", all.x = TRUE)# add positions
+
+stats_clean <- stats[stats$lgID == "AL" |
+                    stats$lgID == "NL", ] # focuses on American and National League
+
+stats_clean <- stats_clean[!is.na(stats_clean$POS), ]  # removes batting data without positions
+
+stats_clean$BA <- ifelse(stats_clean$AB > 0, stats_clean$H /
+                           stats_clean$AB, NA)
+
+by_team <- aggregate(cbind(G, AB, R, H, HR, RBI, SB, BB, SO) ~ teamID + yearID,
+                      data = stats_clean, FUN = sum) 
+# adds Batting Average
+by_team$BA <- by_team$H / by_team$AB
+
+# rename positions 
+position_names <- c(
+  "1B" = "First Base",
+  "2B" = "Second Base",
+  "3B" = "Third Base",
+  "C"  = "Catcher",
+  "CF" = "Center Field",
+  "LF" = "Left Field",
+  "P"  = "Pitcher",
+  "RF" = "Right Field",
+  "SS" = "Shortstop"
+)
+
+by_team_pos <- aggregate(cbind(AB, H, HR, BB, SO, BA) ~ teamID + POS, data = stats_clean, FUN = sum)  
+by_team_pos$Position <- position_names[by_team_pos$POS]
+
+# loading in code from part B
+source("Group17_Exercise1B.R")
+```
+
+## Introduction & Research Questions
+
+
+
+## Exploratory Data Analysis (EDA)
+
+- Bullet 1
+- Bullet 2
+- Bullet 3
+
+
+## Hits vs Home Runs
+
+```{r hits_hr, echo=FALSE, fig.width=5, fig.height=3}
+ggplot(by_team, aes(x = H, y = HR)) +
+  geom_point(col = "steelblue") +
+  labs(
+    x = "Hits",
+    y = "Home Runs"
+  ) +
+  theme_minimal()
+```
+
+## Hits Across Teams by Position
+```{r hits_pos, echo=FALSE, fig.width=5, fig.height=3}
+ggplot(by_team_pos, aes(x = Position, y = H)) +
+  geom_boxplot(col = "steelblue") +
+  labs(
+    x = "Position",
+    y = "Hits"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(
+      angle = 45,
+      hjust = 1
+    )
+  )
+```
+
+
+
+## Data Science Methods & Techniques
+
+
+
+## Results & Key Findings
+
+```{r, echo=FALSE}
+final_comp <- data.frame(
+  Metric  = c("Log-Loss", "Brier Score", "Balanced Accuracy (Macro)", "Macro-F1"),
+  NoSkill = round(null_base[c("LogLoss", "Brier", "BalAcc", "MacroF1")], 4),
+  kNN     = round(test_metrics[c("LogLoss", "Brier", "BalAcc", "MacroF1")], 4),
+  NB      = round(nb_metrics[c("LogLoss", "Brier", "BalAcc", "MacroF1")], 4)
+)
+names(final_comp) <- c("Metric", "No-Skill", paste0("kNN (k* = ", k_star, ")"), "Naive Bayes")
+tbl(final_comp, "Test-set comparison of the no-skill baseline, kNN, and Naive Bayes.")
+```
+
+## Calibration Plot
+```{r, echo=FALSE, fig.width=5, fig.height=3}
+ggplot(calib, aes(x = mean_p, y = frac_obs, color = Model)) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "grey40") +
+  geom_line(linewidth = 1) +
+  geom_point(aes(size = n)) +
+  scale_color_manual(values = c("steelblue", "lightcoral")) +
+  scale_size_continuous(range = c(1.5, 5), name = "Predictions in bin") +
+  coord_equal(xlim = c(0, 1), ylim = c(0, 1)) +
+  labs(x = "Mean predicted probability",
+       y = "Observed fraction of true class") +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "right", panel.grid.minor = element_blank())
+```
+
+## Impact & Discussion
+
